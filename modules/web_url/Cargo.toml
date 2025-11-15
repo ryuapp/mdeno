@@ -8,6 +8,6 @@ path = "lib.rs"
 
 [dependencies]
 rquickjs = { version = "0.10.0", features = ["classes", "properties", "loader"] }
-url = "2.5.7"
+ada-url = "3.3.0"
 serde_json = "1.0.145"
 utils = { path = "../utils" }
