@@ -4,6 +4,8 @@
     "proseWrap": "preserve"
   },
   "tasks": {
+    "run": "cargo run --release",
+    "run:example": "cargo run --release -- run runtime/example.js",
     "build": "cargo build --release",
     "build:rustls": "cargo build --release --no-default-features --features console,navigator,url,encoding,fetch-rustls,deno_fs,deno_os",
     "test": "cargo test --release",
@@ -12,9 +14,8 @@
     "format:mdx": "deno run -A npm:prettier --write ./docs/src/content/**/*.mdx",
     "check:format": "deno fmt --check && deno lint && cargo fmt --check && deno task check:format:mdx",
     "check:format:mdx": "deno run -A npm:prettier --check ./docs/src/content/**/*.mdx",
-    "run:example": "cargo run -- run runtime/example.js",
     "compile:example": "cargo run --release -- compile runtime/example.js",
-    "rustls:run:example": "cargo run --no-default-features --features console,navigator,url,encoding,fetch-rustls,deno_fs,deno_os --release -- run runtime/example.js",
+    "rustls:run:example": "cargo run --release --no-default-features --features console,navigator,url,encoding,fetch-rustls,deno_fs,deno_os -- run runtime/example.js",
     "rustls:compile:example": "cargo run --release --no-default-features --features console,navigator,url,encoding,fetch-rustls,deno_fs,deno_os -- compile runtime/example.js",
     "bloat": "cargo bloat --release",
     "check:size": "deno -R scripts/check-size.ts"

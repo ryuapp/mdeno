@@ -11,9 +11,16 @@ const denoNs = {
   writeFileSync: fs.writeFileSync,
   writeTextFileSync: fs.writeTextFileSync,
   statSync: fs.statSync,
+  lstatSync: fs.lstatSync,
   mkdirSync: fs.mkdirSync,
   removeSync: fs.removeSync,
   copyFileSync: fs.copyFileSync,
+  readDirSync: fs.readDirSync,
+  renameSync: fs.renameSync,
+  realPathSync: fs.realPathSync,
+  truncateSync: fs.truncateSync,
+  makeTempDirSync: fs.makeTempDirSync,
+  makeTempFileSync: fs.makeTempFileSync,
 
   // OS APIs
   exit: os.exit,
