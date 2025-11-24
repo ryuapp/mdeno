@@ -102,4 +102,50 @@ Object.assign(globalThis.__mdeno__.fs, {
     toPath = pathFromURL(toPath);
     return __internal.fs.copyFileSync(fromPath, toPath);
   },
+
+  // https://docs.deno.com/api/deno/~/Deno.lstatSync
+  lstatSync(path) {
+    path = pathFromURL(path);
+    const result = __internal.fs.lstatSync(path);
+    return JSON.parse(result);
+  },
+
+  // https://docs.deno.com/api/deno/~/Deno.readDirSync
+  readDirSync(path) {
+    path = pathFromURL(path);
+    const result = __internal.fs.readDirSync(path);
+    const entries = JSON.parse(result);
+    return entries;
+  },
+
+  // https://docs.deno.com/api/deno/~/Deno.renameSync
+  renameSync(oldpath, newpath) {
+    oldpath = pathFromURL(oldpath);
+    newpath = pathFromURL(newpath);
+    return __internal.fs.renameSync(oldpath, newpath);
+  },
+
+  // https://docs.deno.com/api/deno/~/Deno.realPathSync
+  realPathSync(path) {
+    path = pathFromURL(path);
+    return __internal.fs.realPathSync(path);
+  },
+
+  // https://docs.deno.com/api/deno/~/Deno.truncateSync
+  truncateSync(path, len) {
+    path = pathFromURL(path);
+    return __internal.fs.truncateSync(path, len);
+  },
+
+  // https://docs.deno.com/api/deno/~/Deno.makeTempDirSync
+  makeTempDirSync(options) {
+    const opts = options ? JSON.stringify(options) : null;
+    return __internal.fs.makeTempDirSync(opts);
+  },
+
+  // https://docs.deno.com/api/deno/~/Deno.makeTempFileSync
+  makeTempFileSync(options) {
+    const opts = options ? JSON.stringify(options) : null;
+    return __internal.fs.makeTempFileSync(opts);
+  },
 });

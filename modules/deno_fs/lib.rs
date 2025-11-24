@@ -3,6 +3,7 @@ use rquickjs::{Ctx, Module, Result as JsResult};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
+use std::time::UNIX_EPOCH;
 use utils::add_internal_function;
 
 pub fn init(ctx: &Ctx<'_>) -> JsResult<()> {
@@ -175,18 +176,7 @@ fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn std::error::Error>> {
     add_internal_function!(ctx, "fs.statSync", |path: String| -> String {
         match fs::metadata(&path) {
             Ok(metadata) => {
-                let file_info = json!({
-                    "isFile": metadata.is_file(),
-                    "isDirectory": metadata.is_dir(),
-                    "isSymlink": metadata.is_symlink(),
-                    "size": metadata.len(),
-                    "mtime": metadata.modified().ok().and_then(|t| {
-                        t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis())
-                    }),
-                    "atime": metadata.accessed().ok().and_then(|t| {
-                        t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis())
-                    }),
-                });
+                let file_info = build_file_info(&metadata);
                 file_info.to_string()
             }
             Err(e) => {
@@ -265,7 +255,257 @@ fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // lstatSync(path: string | URL): FileInfo
+    // Similar to statSync but doesn't follow symlinks
+    add_internal_function!(ctx, "fs.lstatSync", |path: String| -> String {
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) => {
+                let file_info = build_file_info(&metadata);
+                file_info.to_string()
+            }
+            Err(e) => {
+                eprintln!("LstatSync error: {}", e);
+                String::new()
+            }
+        }
+    });
+
+    // readDirSync(path: string | URL): Iterable<DirEntry>
+    add_internal_function!(ctx, "fs.readDirSync", |path: String| -> String {
+        match fs::read_dir(&path) {
+            Ok(entries) => {
+                let mut dir_entries = Vec::new();
+                for entry in entries {
+                    match entry {
+                        Ok(entry) => {
+                            if let Ok(file_type) = entry.file_type() {
+                                if let Ok(name) = entry.file_name().into_string() {
+                                    dir_entries.push(json!({
+                                        "name": name,
+                                        "isFile": file_type.is_file(),
+                                        "isDirectory": file_type.is_dir(),
+                                        "isSymlink": file_type.is_symlink(),
+                                    }));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("ReadDirSync entry error: {}", e);
+                        }
+                    }
+                }
+                json!(dir_entries).to_string()
+            }
+            Err(e) => {
+                eprintln!("ReadDirSync error: {}", e);
+                String::new()
+            }
+        }
+    });
+
+    // renameSync(oldpath: string | URL, newpath: string | URL): void
+    add_internal_function!(ctx, "fs.renameSync", |oldpath: String, newpath: String| {
+        if let Err(e) = fs::rename(&oldpath, &newpath) {
+            eprintln!("RenameSync error: {}", e);
+        }
+    });
+
+    // realPathSync(path: string): string
+    add_internal_function!(ctx, "fs.realPathSync", |path: String| -> String {
+        match fs::canonicalize(&path) {
+            Ok(canonical_path) => canonical_path.to_string_lossy().to_string(),
+            Err(e) => {
+                eprintln!("RealPathSync error: {}", e);
+                String::new()
+            }
+        }
+    });
+
+    // truncateSync(path: string, len?: number): void
+    add_internal_function!(ctx, "fs.truncateSync", |path: String, len: Option<u64>| {
+        let file = match fs::OpenOptions::new().write(true).open(&path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("TruncateSync error opening file: {}", e);
+                return;
+            }
+        };
+
+        let new_len = len.unwrap_or(0);
+        if let Err(e) = file.set_len(new_len) {
+            eprintln!("TruncateSync error: {}", e);
+        }
+    });
+
+    // makeTempDirSync(options?: MakeTempOptions): string
+    add_internal_function!(
+        ctx,
+        "fs.makeTempDirSync",
+        |options: Option<String>| -> String {
+            let opts: Value = options
+                .and_then(|o| serde_json::from_str(&o).ok())
+                .unwrap_or(json!({}));
+
+            let prefix = opts.get("prefix").and_then(|v| v.as_str()).unwrap_or("tmp");
+
+            let dir = opts.get("dir").and_then(|v| v.as_str());
+
+            let result = if let Some(base_dir) = dir {
+                tempfile::Builder::new().prefix(prefix).tempdir_in(base_dir)
+            } else {
+                tempfile::Builder::new().prefix(prefix).tempdir()
+            };
+
+            match result {
+                Ok(temp_dir) => {
+                    let path = temp_dir.path().to_string_lossy().to_string();
+                    // Leak the TempDir to keep it alive (it won't be deleted)
+                    std::mem::forget(temp_dir);
+                    path
+                }
+                Err(e) => {
+                    eprintln!("MakeTempDirSync error: {}", e);
+                    String::new()
+                }
+            }
+        }
+    );
+
+    // makeTempFileSync(options?: MakeTempOptions): string
+    add_internal_function!(
+        ctx,
+        "fs.makeTempFileSync",
+        |options: Option<String>| -> String {
+            let opts: Value = options
+                .and_then(|o| serde_json::from_str(&o).ok())
+                .unwrap_or(json!({}));
+
+            let prefix = opts.get("prefix").and_then(|v| v.as_str()).unwrap_or("tmp");
+
+            let suffix = opts.get("suffix").and_then(|v| v.as_str()).unwrap_or("");
+
+            let dir = opts.get("dir").and_then(|v| v.as_str());
+
+            let result = if let Some(base_dir) = dir {
+                tempfile::Builder::new()
+                    .prefix(prefix)
+                    .suffix(suffix)
+                    .tempfile_in(base_dir)
+            } else {
+                tempfile::Builder::new()
+                    .prefix(prefix)
+                    .suffix(suffix)
+                    .tempfile()
+            };
+
+            match result {
+                Ok(temp_file) => {
+                    let path = temp_file.path().to_string_lossy().to_string();
+                    // Leak the NamedTempFile to keep it alive (it won't be deleted)
+                    std::mem::forget(temp_file);
+                    path
+                }
+                Err(e) => {
+                    eprintln!("MakeTempFileSync error: {}", e);
+                    String::new()
+                }
+            }
+        }
+    );
+
     Ok(())
+}
+
+// Helper function: Build FileInfo from fs::Metadata
+fn build_file_info(metadata: &fs::Metadata) -> Value {
+    let mtime_ms = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64);
+
+    let atime_ms = metadata
+        .accessed()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64);
+
+    // birthtime is typically ctime (change time) on Unix and creation time on Windows
+    let birthtime_ms = {
+        #[cfg(windows)]
+        {
+            // On Windows, try to get creation time if available
+            use std::os::windows::fs::MetadataExt;
+            let ct = metadata.creation_time();
+            if ct > 0 {
+                Some((ct / 10_000_000 - 11_644_473_600_000) as u64)
+            } else {
+                mtime_ms
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            // On Unix, use mtime as a fallback
+            mtime_ms
+        }
+    };
+
+    let ctime_ms = {
+        #[cfg(windows)]
+        {
+            // On Windows, use creation time
+            use std::os::windows::fs::MetadataExt;
+            let ct = metadata.creation_time();
+            if ct > 0 {
+                Some((ct / 10_000_000 - 11_644_473_600_000) as u64)
+            } else {
+                mtime_ms
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            // On Unix, we don't have ctime easily available
+            mtime_ms
+        }
+    };
+
+    let (ino, mode, nlink, blocks) = {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            (
+                Some(metadata.ino()),
+                Some(metadata.mode()),
+                Some(metadata.nlink()),
+                Some(metadata.blocks()),
+            )
+        }
+        #[cfg(windows)]
+        {
+            // Windows doesn't have Unix-style inode info
+            (None::<u64>, None::<u32>, None::<u64>, None::<u64>)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            // Other platforms
+            (None::<u64>, None::<u32>, None::<u64>, None::<u64>)
+        }
+    };
+
+    json!({
+        "isFile": metadata.is_file(),
+        "isDirectory": metadata.is_dir(),
+        "isSymlink": metadata.is_symlink(),
+        "size": metadata.len(),
+        "mtime": mtime_ms,
+        "atime": atime_ms,
+        "birthtime": birthtime_ms,
+        "ctime": ctime_ms,
+        "ino": ino,
+        "mode": mode,
+        "nlink": nlink,
+        "blocks": blocks,
+    })
 }
 
 // Helper function: Convert Windows file URL to path
