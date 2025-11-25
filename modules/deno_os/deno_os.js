@@ -4,6 +4,35 @@ const __internal = globalThis[Symbol.for("mdeno.internal")];
 
 const noColorValue = __internal.noColor ?? false;
 
+class PermissionStatus extends EventTarget {
+  #state;
+  #partial;
+
+  constructor(state = "granted", partial = false) {
+    super();
+    this.#state = state;
+    this.#partial = partial;
+  }
+
+  get state() {
+    return this.#state;
+  }
+
+  get partial() {
+    return this.#partial;
+  }
+
+  get onchange() {
+    return null;
+  }
+
+  set onchange(_handler) {
+    // Ignore onchange setter
+  }
+}
+
+const permissionStatus = new PermissionStatus("granted", false);
+
 Object.assign(globalThis.__mdeno__.os, {
   exit: function (code) {
     __internal.exit(code);
@@ -34,4 +63,7 @@ Object.assign(globalThis.__mdeno__.os, {
   get build() {
     return __internal.build;
   },
+
+  PermissionStatus: PermissionStatus,
+  permissionStatus: permissionStatus,
 });

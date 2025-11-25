@@ -25,6 +25,16 @@ const denoNs = {
   // OS APIs
   exit: os.exit,
   env: os.env,
+
+  // Permission APIs - always grant
+  permissions: {
+    query: (_desc) => Promise.resolve(os.permissionStatus),
+    querySync: (_desc) => os.permissionStatus,
+    revoke: (_desc) => Promise.resolve(os.permissionStatus),
+    revokeSync: (_desc) => os.permissionStatus,
+    request: (_desc) => Promise.resolve(os.permissionStatus),
+    requestSync: (_desc) => os.permissionStatus,
+  },
 };
 
 // Add noColor as a getter
