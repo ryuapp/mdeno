@@ -4,6 +4,8 @@
 const fs = globalThis.__mdeno__.fs;
 const os = globalThis.__mdeno__.os;
 
+const permissionStatus = new os.PermissionStatus("granted", false);
+
 const denoNs = {
   // File System APIs
   readFileSync: fs.readFileSync,
@@ -28,12 +30,12 @@ const denoNs = {
 
   // Permission APIs - always grant
   permissions: {
-    query: (_desc) => Promise.resolve(os.permissionStatus),
-    querySync: (_desc) => os.permissionStatus,
-    revoke: (_desc) => Promise.resolve(os.permissionStatus),
-    revokeSync: (_desc) => os.permissionStatus,
-    request: (_desc) => Promise.resolve(os.permissionStatus),
-    requestSync: (_desc) => os.permissionStatus,
+    query: (_desc) => Promise.resolve(permissionStatus),
+    querySync: (_desc) => permissionStatus,
+    revoke: (_desc) => Promise.resolve(permissionStatus),
+    revokeSync: (_desc) => permissionStatus,
+    request: (_desc) => Promise.resolve(permissionStatus),
+    requestSync: (_desc) => permissionStatus,
   },
 };
 

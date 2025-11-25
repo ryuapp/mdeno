@@ -4,12 +4,11 @@ const __internal = globalThis[Symbol.for("mdeno.internal")];
 
 const noColorValue = __internal.noColor ?? false;
 
-class PermissionStatus extends EventTarget {
+class PermissionStatus {
   #state;
   #partial;
 
   constructor(state = "granted", partial = false) {
-    super();
     this.#state = state;
     this.#partial = partial;
   }
@@ -30,8 +29,6 @@ class PermissionStatus extends EventTarget {
     // Ignore onchange setter
   }
 }
-
-const permissionStatus = new PermissionStatus("granted", false);
 
 Object.assign(globalThis.__mdeno__.os, {
   exit: function (code) {
@@ -65,5 +62,4 @@ Object.assign(globalThis.__mdeno__.os, {
   },
 
   PermissionStatus: PermissionStatus,
-  permissionStatus: permissionStatus,
 });
