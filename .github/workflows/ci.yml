@@ -70,15 +70,15 @@ jobs:
       - name: Build
         if: ${{ !endsWith(matrix.target, '-musl') }}
         run: deno task build --target ${{ matrix.target }}
-      - name: Build (rustls)
+      - name: Build (musl with vendored OpenSSL)
         if: endsWith(matrix.target, '-musl')
-        run: deno task build:rustls --target ${{ matrix.target }}
+        run: deno task build --target ${{ matrix.target }} --features vendored-openssl
       - name: Test
         if: ${{ !endsWith(matrix.target, '-musl') }}
         run: deno task test --target ${{ matrix.target }}
-      - name: Test (rustls)
+      - name: Test (musl with vendored OpenSSL)
         if: endsWith(matrix.target, '-musl')
-        run: deno task test:rustls --target ${{ matrix.target }}
+        run: deno task test --target ${{ matrix.target }} --features vendored-openssl
 
       - name: Collect binary size
         run: |

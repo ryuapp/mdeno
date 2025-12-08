@@ -56,7 +56,7 @@ impl Default for ModuleBuilder {
         {
             builder = builder.with_global(web_encoding::init);
         }
-        #[cfg(any(feature = "fetch", feature = "fetch-rustls"))]
+        #[cfg(feature = "fetch")]
         {
             builder = builder.with_global(web_fetch::init);
         }

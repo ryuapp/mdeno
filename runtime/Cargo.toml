@@ -10,7 +10,7 @@ navigator = ["dep:web_navigator"]
 url = ["dep:web_url"]
 encoding = ["dep:web_encoding"]
 fetch = ["dep:web_fetch", "web_fetch?/native-tls"]
-fetch-rustls = ["dep:web_fetch", "web_fetch?/rustls"]
+vendored-openssl = ["dep:openssl", "openssl?/vendored"]
 deno_fs = ["dep:deno_fs"]
 deno_os = ["dep:deno_os"]
 deno_ns = ["dep:deno_ns"]
@@ -22,6 +22,7 @@ libsui = { version = "0.10.0" }
 rquickjs = { version = "0.10.0", features = ["classes", "properties", "loader"] }
 smol = { version = "2.0.2" }
 utils = { path = "../modules/utils" }
+openssl = { version = "0.10.75", optional = true }
 
 # Modules
 deno_fs = { path = "../modules/deno_fs", optional = true }
