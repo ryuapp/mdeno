@@ -5,13 +5,13 @@ use std::fs;
 
 mod module_builder;
 
-const SECTION_NAME: &str = "mdeno_js";
+const SECTION_NAME: &str = "md3n04cl1";
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Check if this executable has embedded JavaScript code and no arguments
+    // Check if this executable has embedded bytecode and no arguments
     if std::env::args().len() == 1 {
-        if let Ok(embedded_code) = extract_embedded_js() {
-            return run_js_code(&embedded_code);
+        if let Ok(Some(bytecode)) = extract_embedded_bytecode() {
+            return run_bytecode_with_path(&bytecode);
         }
     }
 
@@ -72,21 +72,81 @@ fn main() -> Result<(), Box<dyn Error>> {
             .and_then(|s| s.to_str())
             .unwrap_or("output");
 
-        compile_js_to_executable(&absolute_file_path_str, output_name)?;
+        compile_js_to_bytecode(&absolute_file_path_str, output_name)?;
         println!("Compiled {} to {}", file_path, output_name);
     } else {
         let js_code = fs::read_to_string(&absolute_file_path)?;
-        run_js_code_with_path(&js_code, &absolute_file_path_str)?;
+        run_js_code_with_path(&js_code)?;
     }
 
     Ok(())
 }
 
-fn run_js_code(js_code: &str) -> Result<(), Box<dyn Error>> {
-    run_js_code_with_path(js_code, "")
+fn extract_embedded_bytecode() -> Result<Option<Vec<u8>>, Box<dyn Error>> {
+    match libsui::find_section(SECTION_NAME) {
+        Ok(Some(data)) => Ok(Some(data.to_vec())),
+        Ok(None) => Ok(None),
+        Err(_) => Ok(None),
+    }
 }
 
-fn run_js_code_with_path(js_code: &str, script_path: &str) -> Result<(), Box<dyn Error>> {
+fn run_bytecode_with_path(bytecode: &[u8]) -> Result<(), Box<dyn Error>> {
+    use module_builder::ModuleBuilder;
+    use std::sync::Arc;
+
+    smol::block_on(async {
+        let runtime = Runtime::new()?;
+
+        let (_global_attachment, module_registry) = ModuleBuilder::default().build();
+        let registry = Arc::new(module_registry);
+
+        runtime.set_loader(
+            module_builder::NodeResolver::new(registry.clone()),
+            module_builder::NodeLoader::new(registry.clone()),
+        );
+
+        let context = Context::full(&runtime)?;
+
+        context.with(|ctx| -> Result<(), Box<dyn Error>> {
+            setup_extensions(&ctx)?;
+
+            // Load bytecode using Module::load
+            let module = unsafe { Module::load(ctx.clone(), bytecode)? };
+
+            // Evaluate the module
+            let result = module.eval().map(|(_module, _promise)| ());
+
+            if let Err(caught) = result.catch(&ctx) {
+                match caught {
+                    CaughtError::Exception(exception) => {
+                        if let Some(message) = exception.message() {
+                            eprintln!("Error: {}", message);
+                        }
+                        if let Some(stack) = exception.stack() {
+                            eprintln!("{}", stack);
+                        }
+                    }
+                    CaughtError::Value(value) => {
+                        eprintln!("Error: {:?}", value);
+                    }
+                    CaughtError::Error(error) => {
+                        eprintln!("Error: {:?}", error);
+                    }
+                }
+                std::process::exit(1);
+            }
+
+            // Execute all pending jobs (promises, microtasks)
+            while ctx.execute_pending_job() {}
+
+            Ok(())
+        })?;
+
+        Ok(())
+    })
+}
+
+fn run_js_code_with_path(js_code: &str) -> Result<(), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
     use std::sync::Arc;
 
@@ -106,16 +166,10 @@ fn run_js_code_with_path(js_code: &str, script_path: &str) -> Result<(), Box<dyn
         let context = Context::full(&runtime)?;
 
         context.with(|ctx| -> Result<(), Box<dyn Error>> {
-            setup_extensions(&ctx, script_path)?;
-
-            let effective_path = if script_path.is_empty() {
-                "./$mdeno$eval.js"
-            } else {
-                script_path
-            };
+            setup_extensions(&ctx)?;
 
             let result = {
-                Module::evaluate(ctx.clone(), effective_path, js_code)
+                Module::evaluate(ctx.clone(), "./$mdeno$eval.js", js_code)
                     .and_then(|m| m.finish::<()>())
             };
 
@@ -149,8 +203,18 @@ fn run_js_code_with_path(js_code: &str, script_path: &str) -> Result<(), Box<dyn
     })
 }
 
-fn compile_js_to_executable(js_file: &str, output_name: &str) -> Result<(), Box<dyn Error>> {
+fn compile_js_to_bytecode(js_file: &str, output_name: &str) -> Result<(), Box<dyn Error>> {
     let js_code = fs::read_to_string(js_file)?;
+
+    // Compile JS to bytecode
+    let rt = rquickjs::Runtime::new()?;
+    let ctx = rquickjs::Context::full(&rt)?;
+
+    let bytecode = ctx.with(|ctx| -> Result<Vec<u8>, Box<dyn Error>> {
+        let module = rquickjs::Module::declare(ctx.clone(), output_name.to_string(), js_code)?;
+        let bc = module.write(rquickjs::module::WriteOptions::default())?;
+        Ok(bc)
+    })?;
 
     // Get current executable path
     let current_exe = std::env::current_exe()?;
@@ -163,14 +227,14 @@ fn compile_js_to_executable(js_file: &str, output_name: &str) -> Result<(), Box<
         output_name.to_string()
     };
 
-    // Use libsui to embed JavaScript code
+    // Use libsui to embed bytecode
     let mut output_file = fs::File::create(&output_exe)?;
 
     #[cfg(target_os = "windows")]
     {
         use libsui::PortableExecutable;
         PortableExecutable::from(&exe_bytes)?
-            .write_resource(SECTION_NAME, js_code.as_bytes().to_vec())?
+            .write_resource(SECTION_NAME, bytecode.clone())?
             .build(&mut output_file)?;
     }
 
@@ -178,7 +242,7 @@ fn compile_js_to_executable(js_file: &str, output_name: &str) -> Result<(), Box<
     {
         use libsui::Macho;
         Macho::from(exe_bytes)?
-            .write_section(SECTION_NAME, js_code.as_bytes().to_vec())?
+            .write_section(SECTION_NAME, bytecode.clone())?
             .build(&mut output_file)?;
     }
 
@@ -186,14 +250,14 @@ fn compile_js_to_executable(js_file: &str, output_name: &str) -> Result<(), Box<
     {
         use libsui::Elf;
         let elf = Elf::new(&exe_bytes);
-        elf.append(SECTION_NAME, js_code.as_bytes(), &mut output_file)?;
+        elf.append(SECTION_NAME, &bytecode, &mut output_file)?;
     }
 
-    // Append magic string "md3n04cl1" to mark this as a standalone binary
+    // Append magic string
     {
         use std::io::Write;
         let mut output_file = fs::OpenOptions::new().append(true).open(&output_exe)?;
-        output_file.write_all(b"md3n04cl1")?;
+        output_file.write_all(SECTION_NAME.as_bytes())?;
     }
 
     let file_size = fs::metadata(&output_exe)?.len();
@@ -205,16 +269,7 @@ fn compile_js_to_executable(js_file: &str, output_name: &str) -> Result<(), Box<
     Ok(())
 }
 
-fn extract_embedded_js() -> Result<String, Box<dyn Error>> {
-    let data = libsui::find_section(SECTION_NAME)?.ok_or("No embedded JavaScript found")?;
-
-    let js_code = String::from_utf8(data.to_vec())
-        .map_err(|e| format!("Invalid UTF-8 in embedded JS: {}", e))?;
-
-    Ok(js_code)
-}
-
-fn setup_extensions(ctx: &rquickjs::Ctx, _script_path: &str) -> Result<(), Box<dyn Error>> {
+fn setup_extensions(ctx: &rquickjs::Ctx) -> Result<(), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
     use rquickjs::Module;
 
