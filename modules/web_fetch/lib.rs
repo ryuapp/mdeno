@@ -5,13 +5,6 @@ use std::sync::{Arc, Mutex};
 use utils::add_internal_function;
 
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
-    #[cfg(feature = "rustls")]
-    {
-        // Initialize rustls crypto provider
-        use rustls::crypto::ring::default_provider;
-        let _ = default_provider().install_default();
-    }
-
     setup_internal(ctx).map_err(|_| rquickjs::Error::Unknown)?;
     let module = Module::evaluate(ctx.clone(), "web_fetch", include_str!("fetch.js"))?;
     module.finish::<()>()?;
@@ -229,100 +222,6 @@ mod tls {
 
     pub async fn create_plain_stream(host: &str, port: u16) -> Result<IoStream, String> {
         let stream = TcpStream::connect(format!("{}:{}", host, port))
-            .await
-            .map_err(|e| format!("Connection failed: {}", e))?;
-        Ok(IoStream::Plain(stream))
-    }
-}
-
-#[cfg(feature = "rustls")]
-mod tls {
-    use futures_io::{AsyncRead, AsyncWrite};
-    use futures_rustls::TlsConnector;
-    use smol::net::TcpStream;
-    use std::sync::Arc;
-
-    pub enum IoStream {
-        Plain(TcpStream),
-        Tls(futures_rustls::client::TlsStream<TcpStream>),
-    }
-
-    impl AsyncRead for IoStream {
-        fn poll_read(
-            mut self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &mut [u8],
-        ) -> std::task::Poll<std::io::Result<usize>> {
-            match &mut *self {
-                IoStream::Plain(s) => std::pin::Pin::new(s).poll_read(cx, buf),
-                IoStream::Tls(s) => std::pin::Pin::new(s).poll_read(cx, buf),
-            }
-        }
-    }
-
-    impl AsyncWrite for IoStream {
-        fn poll_write(
-            mut self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &[u8],
-        ) -> std::task::Poll<std::io::Result<usize>> {
-            match &mut *self {
-                IoStream::Plain(s) => std::pin::Pin::new(s).poll_write(cx, buf),
-                IoStream::Tls(s) => std::pin::Pin::new(s).poll_write(cx, buf),
-            }
-        }
-
-        fn poll_flush(
-            mut self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<std::io::Result<()>> {
-            match &mut *self {
-                IoStream::Plain(s) => std::pin::Pin::new(s).poll_flush(cx),
-                IoStream::Tls(s) => std::pin::Pin::new(s).poll_flush(cx),
-            }
-        }
-
-        fn poll_close(
-            mut self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<std::io::Result<()>> {
-            match &mut *self {
-                IoStream::Plain(s) => std::pin::Pin::new(s).poll_close(cx),
-                IoStream::Tls(s) => std::pin::Pin::new(s).poll_close(cx),
-            }
-        }
-    }
-
-    pub async fn create_tls_stream(host: &str, port: u16) -> Result<IoStream, String> {
-        use rustls::pki_types::ServerName;
-
-        let stream = TcpStream::connect(format!("{}:{}", host, port))
-            .await
-            .map_err(|e| format!("Connection failed: {}", e))?;
-
-        let root_store = rustls::RootCertStore {
-            roots: webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
-        };
-
-        let config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
-
-        let connector = TlsConnector::from(Arc::new(config));
-        let server_name = ServerName::try_from(host.to_string())
-            .map_err(|e| format!("Invalid server name: {}", e))?;
-
-        let tls_stream = connector
-            .connect(server_name, stream)
-            .await
-            .map_err(|e| format!("TLS handshake failed: {}", e))?;
-
-        Ok(IoStream::Tls(tls_stream))
-    }
-
-    pub async fn create_plain_stream(host: &str, port: u16) -> Result<IoStream, String> {
-        let addr = format!("{}:{}", host, port);
-        let stream = TcpStream::connect(&addr)
             .await
             .map_err(|e| format!("Connection failed: {}", e))?;
         Ok(IoStream::Plain(stream))
