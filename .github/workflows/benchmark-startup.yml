@@ -1,0 +1,63 @@
+name: Benchmark Startup Time
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Benchmark Startup Time
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "latest"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build mDeno
+        run: cargo build --release
+
+      - name: Run Startup Benchmark (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x benchmarks/bench-startup.sh
+          bash benchmarks/bench-startup.sh | tee benchmark-results.txt
+
+      - name: Run Startup Benchmark (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pwsh benchmarks/bench-startup.ps1 | Tee-Object benchmark-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v5
+        with:
+          name: benchmark-startup-results-${{ matrix.os }}
+          path: benchmark-results.txt
+
+      - name: Display results (Linux)
+        if: runner.os == 'Linux'
+        run: cat benchmark-results.txt
+
+      - name: Display results (Windows)
+        if: runner.os == 'Windows'
+        run: Get-Content benchmark-results.txt
