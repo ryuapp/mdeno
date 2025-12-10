@@ -18,7 +18,7 @@ deno_ns = ["dep:deno_ns"]
 [dependencies]
 anyhow = { version = "1.0.100" }
 clap_lex = { version = "0.7.5" }
-libsui = { version = "0.10.0" }
+libsui = { version = "0.12.2" }
 rquickjs = { version = "0.10.0", features = ["classes", "properties", "loader"] }
 smol = { version = "2.0.2" }
 utils = { path = "../modules/utils" }
