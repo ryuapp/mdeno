@@ -2,17 +2,15 @@ use clap_lex::RawArgs;
 use rquickjs::{CatchResultExt, CaughtError, Context, Module, Runtime};
 use std::error::Error;
 use std::fs;
+use utils::SECTION_NAME;
 
 mod module_builder;
 
-const SECTION_NAME: &str = "md3n04cl1";
-
 fn main() -> Result<(), Box<dyn Error>> {
-    // Check if this executable has embedded bytecode and no arguments
-    if std::env::args().len() == 1 {
-        if let Ok(Some(bytecode)) = extract_embedded_bytecode() {
-            return run_bytecode_with_path(&bytecode);
-        }
+    // Check if this executable has embedded bytecode
+    if let Ok(Some(bytecode)) = extract_embedded_bytecode() {
+        // Standalone binary: args are retrieved directly in deno_os module
+        return run_bytecode_with_path(&bytecode);
     }
 
     let raw = RawArgs::from_args();
@@ -50,6 +48,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let file_path = file_path.ok_or("JavaScript file is required")?;
+
+    // Find the position of the script file in args and take everything after it
+    let all_args: Vec<String> = std::env::args().collect();
+    let script_args: Vec<String> = all_args
+        .iter()
+        .skip_while(|arg| *arg != &file_path)
+        .skip(1) // Skip the file path itself
+        .cloned()
+        .collect();
+
+    // Set script arguments for Deno.args
+    #[cfg(feature = "deno_os")]
+    deno_os::set_script_args(script_args);
 
     // Convert file path to absolute path
     let file_path_buf = std::path::Path::new(&file_path);

@@ -25,5 +25,8 @@ try {
   console.error("Fetch error:", error.message);
 }
 
+console.log("Standalone: ", Deno.build.standalone);
+console.log(Deno.args);
+
 Deno.exit(0);
 console.log("exit");

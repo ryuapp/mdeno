@@ -7,6 +7,7 @@ edition = "2024"
 path = "lib.rs"
 
 [dependencies]
+libsui = { version = "0.12.2" }
 rquickjs = { version = "0.10.0", features = ["classes", "properties", "loader"] }
 serde_json = { version = "1.0.145" }
 utils = { path = "../utils" }
