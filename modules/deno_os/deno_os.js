@@ -31,6 +31,8 @@ class PermissionStatus {
 }
 
 Object.assign(globalThis.__mdeno__.os, {
+  args: __internal.args || [],
+
   exit: function (code) {
     __internal.exit(code);
   },

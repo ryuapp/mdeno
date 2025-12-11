@@ -7,6 +7,9 @@ const os = globalThis.__mdeno__.os;
 const permissionStatus = new os.PermissionStatus("granted", false);
 
 const denoNs = {
+  // Command line arguments
+  args: os.args,
+
   // File System APIs
   readFileSync: fs.readFileSync,
   readTextFileSync: fs.readTextFileSync,

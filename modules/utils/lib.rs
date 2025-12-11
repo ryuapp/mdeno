@@ -1,5 +1,8 @@
 use rquickjs::{Ctx, Result};
 
+/// Magic section name for embedded bytecode in standalone binaries
+pub const SECTION_NAME: &str = "md3n04cl1";
+
 pub trait ModuleDef {
     fn init(ctx: &Ctx<'_>) -> Result<()>;
     fn source() -> &'static str;
