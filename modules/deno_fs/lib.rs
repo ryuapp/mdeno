@@ -1,10 +1,11 @@
 // Copyright 2018-2025 the Deno authors. MIT license.
 use rquickjs::{Ctx, Module, Result as JsResult};
 use serde_json::{Value, json};
+use std::env;
 use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
-use utils::add_internal_function;
+use utils::{DenoResult, add_internal_function};
 
 pub fn init(ctx: &Ctx<'_>) -> JsResult<()> {
     // Ensure the internal symbol object and nested fs object exist
@@ -27,6 +28,11 @@ pub fn init(ctx: &Ctx<'_>) -> JsResult<()> {
 }
 
 fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn std::error::Error>> {
+    // cwd(): string - Get current working directory
+    add_internal_function!(ctx, "fs.cwd", || -> DenoResult<String> {
+        Ok(env::current_dir()?.display().to_string())
+    } => deno);
+
     // pathFromURLImpl(url: URL): string - Platform-specific URL to path conversion
     add_internal_function!(ctx, "pathFromURLImpl", |url_string: String| -> String {
         // Parse the URL object that was serialized as JSON
