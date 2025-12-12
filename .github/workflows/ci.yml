@@ -31,7 +31,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions: {}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
