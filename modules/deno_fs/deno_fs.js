@@ -6,18 +6,6 @@ const PATHNAME_WIN_RE = /^\/*([A-Za-z]:)(\/|$)/;
 const SLASH_WIN_RE = /\//g;
 const PERCENT_RE = /%(?![0-9A-Fa-f]{2})/g;
 
-// Helper to handle Deno-style errors from internal functions
-function handleDenoResult(result) {
-  if (!result.ok) {
-    const errors = globalThis.__mdeno__.errors;
-    if (errors && result.kind && errors[result.kind]) {
-      throw new errors[result.kind](result.error);
-    }
-    throw new Error(result.error);
-  }
-  return result.value;
-}
-
 // Convert Windows file URL to path (e.g., file:///C:/path → C:\path)
 function pathFromURLWin32(url) {
   let p = url.pathname.replace(PATHNAME_WIN_RE, "$1/");
@@ -56,7 +44,7 @@ function pathFromURL(pathOrUrl) {
 Object.assign(globalThis.__mdeno__.fs, {
   // https://docs.deno.com/api/deno/~/Deno.cwd
   cwd() {
-    return handleDenoResult(__internal.fs.cwd());
+    return __internal.fs.cwd();
   },
 
   // https://docs.deno.com/api/deno/~/Deno.readFileSync
@@ -77,40 +65,31 @@ Object.assign(globalThis.__mdeno__.fs, {
     if (typeof data === "string") {
       data = new TextEncoder().encode(data);
     }
-    const opts = options ? JSON.stringify(options) : null;
-    return __internal.fs.writeFileSync(path, data, opts);
+    return __internal.fs.writeFileSync(path, data, options);
   },
 
   // https://docs.deno.com/api/deno/~/Deno.writeTextFileSync
   writeTextFileSync(path, text, options) {
     path = pathFromURL(path);
-    const opts = options ? JSON.stringify(options) : null;
-    return __internal.fs.writeTextFileSync(
-      path,
-      String(text),
-      opts,
-    );
+    return __internal.fs.writeTextFileSync(path, String(text), options);
   },
 
   // https://docs.deno.com/api/deno/~/Deno.statSync
   statSync(path) {
     path = pathFromURL(path);
-    const result = __internal.fs.statSync(path);
-    return JSON.parse(result);
+    return __internal.fs.statSync(path);
   },
 
   // https://docs.deno.com/api/deno/~/Deno.mkdirSync
   mkdirSync(path, options) {
     path = pathFromURL(path);
-    const opts = options ? JSON.stringify(options) : null;
-    return __internal.fs.mkdirSync(path, opts);
+    return __internal.fs.mkdirSync(path, options);
   },
 
   // https://docs.deno.com/api/deno/~/Deno.removeSync
   removeSync(path, options) {
     path = pathFromURL(path);
-    const opts = options ? JSON.stringify(options) : null;
-    return __internal.fs.removeSync(path, opts);
+    return __internal.fs.removeSync(path, options);
   },
 
   // https://docs.deno.com/api/deno/~/Deno.copyFileSync
@@ -123,16 +102,13 @@ Object.assign(globalThis.__mdeno__.fs, {
   // https://docs.deno.com/api/deno/~/Deno.lstatSync
   lstatSync(path) {
     path = pathFromURL(path);
-    const result = __internal.fs.lstatSync(path);
-    return JSON.parse(result);
+    return __internal.fs.lstatSync(path);
   },
 
   // https://docs.deno.com/api/deno/~/Deno.readDirSync
   readDirSync(path) {
     path = pathFromURL(path);
-    const result = __internal.fs.readDirSync(path);
-    const entries = JSON.parse(result);
-    return entries;
+    return __internal.fs.readDirSync(path);
   },
 
   // https://docs.deno.com/api/deno/~/Deno.renameSync
@@ -156,13 +132,11 @@ Object.assign(globalThis.__mdeno__.fs, {
 
   // https://docs.deno.com/api/deno/~/Deno.makeTempDirSync
   makeTempDirSync(options) {
-    const opts = options ? JSON.stringify(options) : null;
-    return __internal.fs.makeTempDirSync(opts);
+    return __internal.fs.makeTempDirSync(options);
   },
 
   // https://docs.deno.com/api/deno/~/Deno.makeTempFileSync
   makeTempFileSync(options) {
-    const opts = options ? JSON.stringify(options) : null;
-    return __internal.fs.makeTempFileSync(opts);
+    return __internal.fs.makeTempFileSync(options);
   },
 });

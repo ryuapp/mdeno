@@ -45,24 +45,6 @@ impl<T> From<DenoResult<T>> for JsResult<T> {
     }
 }
 
-impl<'js, T: rquickjs::IntoJs<'js>> rquickjs::IntoJs<'js> for JsResult<T> {
-    fn into_js(self, ctx: &rquickjs::Ctx<'js>) -> rquickjs::Result<rquickjs::Value<'js>> {
-        let obj = rquickjs::Object::new(ctx.clone())?;
-        match self {
-            JsResult::Ok(value) => {
-                obj.set("ok", true)?;
-                obj.set("value", value)?;
-            }
-            JsResult::Err { error, kind } => {
-                obj.set("ok", false)?;
-                obj.set("error", error)?;
-                obj.set("kind", kind)?;
-            }
-        }
-        obj.into_js(ctx)
-    }
-}
-
 impl std::fmt::Display for DenoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -124,26 +106,49 @@ impl DenoError {
     }
 }
 
+// Modify IntoJs for JsResult to throw errors instead of returning an object
+impl<'js, T: rquickjs::IntoJs<'js>> rquickjs::IntoJs<'js> for JsResult<T> {
+    fn into_js(self, ctx: &rquickjs::Ctx<'js>) -> rquickjs::Result<rquickjs::Value<'js>> {
+        match self {
+            JsResult::Ok(value) => value.into_js(ctx),
+            JsResult::Err { error, kind } => {
+                // Try to get the specific error constructor from __mdeno__.errors
+                let error_class = ctx
+                    .globals()
+                    .get::<_, rquickjs::Object>("__mdeno__")
+                    .and_then(|mdeno| mdeno.get::<_, rquickjs::Object>("errors"))
+                    .and_then(|errors| errors.get::<_, rquickjs::Function>(kind.as_str()));
+
+                let error_value = if let Ok(error_ctor) = error_class {
+                    // Create error instance by calling the constructor with 'new'
+                    // Use Object::new and set prototype manually
+                    let instance = rquickjs::Object::new(ctx.clone())?;
+
+                    // Set prototype from error constructor
+                    if let Ok(prototype) = error_ctor.get::<_, rquickjs::Object>("prototype") {
+                        instance.set_prototype(Some(&prototype))?;
+                    }
+
+                    // Set error properties
+                    instance.set("message", error.as_str())?;
+                    instance.set("name", kind.as_str())?;
+
+                    instance.into_value()
+                } else {
+                    // Fallback: use generic Error
+                    rquickjs::Exception::from_message(ctx.clone(), &error)?.into()
+                };
+
+                Err(ctx.throw(error_value))
+            }
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! add_internal_function {
-    // For functions that return DenoResult<T>
-    ($ctx:expr, $name:expr, $func:expr => deno) => {{
-        use rquickjs::function::Func;
-        use utils::JsResult;
-
-        let temp_name = format!("__mdeno_internal_{}", $name.replace('.', "_"));
-        let internal_path = format!("globalThis[Symbol.for('mdeno.internal')].{}", $name);
-
-        let wrapper = $func;
-        let wrapped = move || -> JsResult<_> { wrapper().into() };
-
-        let func = Func::from(wrapped);
-        $ctx.globals().set(temp_name.as_str(), func)?;
-        $ctx.eval::<(), _>(format!(
-            "{} = globalThis.{}; delete globalThis.{};",
-            internal_path, temp_name, temp_name
-        ))?
-    }};
+    // For functions that return JsResult<T> (with => deno marker)
+    ($ctx:expr, $name:expr, $func:expr => deno) => {{ add_internal_function!($ctx, $name, $func) }};
 
     // For regular functions
     ($ctx:expr, $name:expr, $func:expr) => {{

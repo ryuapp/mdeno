@@ -282,22 +282,6 @@ fn compile_js_to_bytecode(js_file: &str, output_name: &str) -> Result<(), Box<dy
 
 fn setup_extensions(ctx: &rquickjs::Ctx) -> Result<(), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
-    use rquickjs::Module;
-
-    // Initialize mdeno namespace with internal object as a module
-    let module = Module::evaluate(
-        ctx.clone(),
-        "__mdeno__",
-        r#"
-        globalThis[Symbol.for("mdeno.internal")] ||= {};
-        globalThis.__mdeno__ = {
-            fs: {},
-            os: {},
-        };
-        "#,
-    )
-    .map_err(|e| format!("Failed to create __mdeno__ namespace: {:?}", e))?;
-    module.finish::<()>()?;
 
     // Build module configuration using default (feature-based)
     let builder = ModuleBuilder::default();
