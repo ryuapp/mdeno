@@ -6,6 +6,18 @@ const PATHNAME_WIN_RE = /^\/*([A-Za-z]:)(\/|$)/;
 const SLASH_WIN_RE = /\//g;
 const PERCENT_RE = /%(?![0-9A-Fa-f]{2})/g;
 
+// Helper to handle Deno-style errors from internal functions
+function handleDenoResult(result) {
+  if (!result.ok) {
+    const errors = globalThis.__mdeno__.errors;
+    if (errors && result.kind && errors[result.kind]) {
+      throw new errors[result.kind](result.error);
+    }
+    throw new Error(result.error);
+  }
+  return result.value;
+}
+
 // Convert Windows file URL to path (e.g., file:///C:/path → C:\path)
 function pathFromURLWin32(url) {
   let p = url.pathname.replace(PATHNAME_WIN_RE, "$1/");
@@ -42,6 +54,11 @@ function pathFromURL(pathOrUrl) {
 }
 
 Object.assign(globalThis.__mdeno__.fs, {
+  // https://docs.deno.com/api/deno/~/Deno.cwd
+  cwd() {
+    return handleDenoResult(__internal.fs.cwd());
+  },
+
   // https://docs.deno.com/api/deno/~/Deno.readFileSync
   readFileSync(path) {
     path = pathFromURL(path);

@@ -10,6 +10,9 @@ const denoNs = {
   // Command line arguments
   args: os.args,
 
+  // Process APIs
+  cwd: fs.cwd,
+
   // File System APIs
   readFileSync: fs.readFileSync,
   readTextFileSync: fs.readTextFileSync,
@@ -54,6 +57,14 @@ Object.defineProperty(denoNs, "build", {
   get() {
     return os.build;
   },
+});
+
+// Add errors namespace
+Object.defineProperty(denoNs, "errors", {
+  value: globalThis.__mdeno__.errors,
+  enumerable: true,
+  writable: false,
+  configurable: false,
 });
 
 // Define globalThis.Deno
