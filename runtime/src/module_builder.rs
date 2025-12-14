@@ -44,6 +44,9 @@ impl Default for ModuleBuilder {
     fn default() -> Self {
         let mut builder = Self::new();
 
+        // Initialize deno_common first
+        builder = builder.with_global(deno_common::init);
+
         #[cfg(feature = "console")]
         {
             builder = builder.with_global(web_console::init);

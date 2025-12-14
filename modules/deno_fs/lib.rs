@@ -1,13 +1,144 @@
 // Copyright 2018-2025 the Deno authors. MIT license.
-use rquickjs::{Ctx, Module, Result as JsResult};
-use serde_json::{Value, json};
+use rquickjs::function::Constructor;
+use rquickjs::{Ctx, Module, Result as QuickResult};
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
-use utils::{DenoResult, add_internal_function};
+use utils::{DenoError, DenoResult, JsResult, add_internal_function};
 
-pub fn init(ctx: &Ctx<'_>) -> JsResult<()> {
+#[derive(Debug, Clone)]
+pub struct FileInfo {
+    pub is_file: bool,
+    pub is_directory: bool,
+    pub is_symlink: bool,
+    pub size: u64,
+    pub mtime: Option<u64>,
+    pub atime: Option<u64>,
+    pub birthtime: Option<u64>,
+    pub ctime: Option<u64>,
+    pub ino: Option<u64>,
+    pub mode: Option<u32>,
+    pub nlink: Option<u64>,
+    pub blocks: Option<u64>,
+}
+
+fn create_date<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    timestamp_ms: Option<u64>,
+) -> rquickjs::Result<rquickjs::Value<'js>> {
+    if let Some(ts) = timestamp_ms {
+        let date_ctor: Constructor = ctx.globals().get("Date")?;
+        let date_obj: rquickjs::Object = date_ctor.construct((ts,))?;
+        Ok(date_obj.into_value())
+    } else {
+        Ok(rquickjs::Value::new_null(ctx.clone()))
+    }
+}
+
+impl<'js> rquickjs::IntoJs<'js> for FileInfo {
+    fn into_js(self, ctx: &rquickjs::Ctx<'js>) -> rquickjs::Result<rquickjs::Value<'js>> {
+        let obj = rquickjs::Object::new(ctx.clone())?;
+        obj.set("isFile", self.is_file)?;
+        obj.set("isDirectory", self.is_directory)?;
+        obj.set("isSymlink", self.is_symlink)?;
+        obj.set("size", self.size)?;
+        obj.set("mtime", create_date(ctx, self.mtime)?)?;
+        obj.set("atime", create_date(ctx, self.atime)?)?;
+        obj.set("birthtime", create_date(ctx, self.birthtime)?)?;
+        obj.set("ctime", create_date(ctx, self.ctime)?)?;
+        obj.set("ino", self.ino)?;
+        obj.set("mode", self.mode)?;
+        obj.set("nlink", self.nlink)?;
+        obj.set("blocks", self.blocks)?;
+        Ok(obj.into_value())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DirEntry {
+    pub name: String,
+    pub is_file: bool,
+    pub is_directory: bool,
+    pub is_symlink: bool,
+}
+
+impl<'js> rquickjs::IntoJs<'js> for DirEntry {
+    fn into_js(self, ctx: &rquickjs::Ctx<'js>) -> rquickjs::Result<rquickjs::Value<'js>> {
+        let obj = rquickjs::Object::new(ctx.clone())?;
+        obj.set("name", self.name)?;
+        obj.set("isFile", self.is_file)?;
+        obj.set("isDirectory", self.is_directory)?;
+        obj.set("isSymlink", self.is_symlink)?;
+        Ok(obj.into_value())
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct WriteFileOptions {
+    pub append: bool,
+    pub create: bool,
+    pub create_new: bool,
+}
+
+impl<'js> rquickjs::FromJs<'js> for WriteFileOptions {
+    fn from_js(ctx: &rquickjs::Ctx<'js>, value: rquickjs::Value<'js>) -> rquickjs::Result<Self> {
+        let obj = rquickjs::Object::from_js(ctx, value)?;
+        Ok(Self {
+            append: obj.get("append").unwrap_or(false),
+            create: obj.get("create").unwrap_or(true),
+            create_new: obj.get("createNew").unwrap_or(false),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MkdirOptions {
+    pub recursive: bool,
+}
+
+impl<'js> rquickjs::FromJs<'js> for MkdirOptions {
+    fn from_js(ctx: &rquickjs::Ctx<'js>, value: rquickjs::Value<'js>) -> rquickjs::Result<Self> {
+        let obj = rquickjs::Object::from_js(ctx, value)?;
+        Ok(Self {
+            recursive: obj.get("recursive").unwrap_or(false),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RemoveOptions {
+    pub recursive: bool,
+}
+
+impl<'js> rquickjs::FromJs<'js> for RemoveOptions {
+    fn from_js(ctx: &rquickjs::Ctx<'js>, value: rquickjs::Value<'js>) -> rquickjs::Result<Self> {
+        let obj = rquickjs::Object::from_js(ctx, value)?;
+        Ok(Self {
+            recursive: obj.get("recursive").unwrap_or(false),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MakeTempOptions {
+    pub prefix: Option<String>,
+    pub suffix: Option<String>,
+    pub dir: Option<String>,
+}
+
+impl<'js> rquickjs::FromJs<'js> for MakeTempOptions {
+    fn from_js(ctx: &rquickjs::Ctx<'js>, value: rquickjs::Value<'js>) -> rquickjs::Result<Self> {
+        let obj = rquickjs::Object::from_js(ctx, value)?;
+        Ok(Self {
+            prefix: obj.get("prefix").ok(),
+            suffix: obj.get("suffix").ok(),
+            dir: obj.get("dir").ok(),
+        })
+    }
+}
+
+pub fn init(ctx: &Ctx<'_>) -> QuickResult<()> {
     // Ensure the internal symbol object and nested fs object exist
     ctx.eval::<(), _>("globalThis[Symbol.for('mdeno.internal')] ||= {}; globalThis[Symbol.for('mdeno.internal')].fs ||= {};")?;
 
@@ -27,403 +158,293 @@ pub fn init(ctx: &Ctx<'_>) -> JsResult<()> {
     Ok(())
 }
 
-fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn std::error::Error>> {
-    // cwd(): string - Get current working directory
-    add_internal_function!(ctx, "fs.cwd", || -> DenoResult<String> {
-        Ok(env::current_dir()?.display().to_string())
-    } => deno);
+// Helper functions for internal API implementations
 
-    // pathFromURLImpl(url: URL): string - Platform-specific URL to path conversion
-    add_internal_function!(ctx, "pathFromURLImpl", |url_string: String| -> String {
-        // Parse the URL object that was serialized as JSON
-        // The JavaScript side sends us the pathname and hostname
-        match serde_json::from_str::<serde_json::Value>(&url_string) {
-            Ok(url_obj) => {
-                let pathname = url_obj
-                    .get("pathname")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let hostname = url_obj
-                    .get("hostname")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+fn fs_cwd() -> JsResult<String> {
+    let result: DenoResult<String> = (|| Ok(env::current_dir()?.display().to_string()))();
+    result.into()
+}
 
-                // Use platform-specific path conversion
-                if cfg!(windows) {
-                    path_from_url_win32(pathname, hostname)
-                } else {
-                    path_from_url_posix(pathname, hostname)
-                }
-            }
-            Err(_) => String::new(),
+fn fs_read_file_sync(path: String) -> JsResult<Vec<u8>> {
+    let result: DenoResult<Vec<u8>> = fs::read(&path).map_err(|e| e.into());
+    result.into()
+}
+
+fn fs_read_text_file_sync(path: String) -> JsResult<String> {
+    let result: DenoResult<String> = fs::read_to_string(&path).map_err(|e| e.into());
+    result.into()
+}
+
+fn fs_write_file_sync(
+    path: String,
+    data: Vec<u8>,
+    options: Option<WriteFileOptions>,
+) -> JsResult<()> {
+    let result: DenoResult<()> = (|| {
+        let opts = options.unwrap_or_default();
+
+        if opts.create_new && Path::new(&path).exists() {
+            return Err(DenoError::Other("File already exists".to_string()));
         }
-    });
 
-    // readFileSync(path: string | URL): Uint8Array
-    add_internal_function!(ctx, "fs.readFileSync", |path: String| -> Vec<u8> {
-        match fs::read(&path) {
-            Ok(data) => data,
-            Err(e) => {
-                // TODO: Return proper Deno error
-                eprintln!("ReadFileSync error: {}", e);
-                Vec::new()
-            }
+        if opts.append {
+            let mut file = fs::OpenOptions::new()
+                .create(opts.create)
+                .append(true)
+                .open(&path)?;
+            use std::io::Write;
+            file.write_all(&data)?;
+        } else {
+            fs::write(&path, &data)?;
         }
-    });
+        Ok(())
+    })();
+    result.into()
+}
 
-    // readTextFileSync(path: string | URL): string
-    add_internal_function!(ctx, "fs.readTextFileSync", |path: String| -> String {
-        match fs::read_to_string(&path) {
-            Ok(content) => content,
-            Err(e) => {
-                eprintln!("ReadTextFileSync error: {}", e);
-                String::new()
-            }
+fn fs_write_text_file_sync(
+    path: String,
+    text: String,
+    options: Option<WriteFileOptions>,
+) -> JsResult<()> {
+    let result: DenoResult<()> = (|| {
+        let opts = options.unwrap_or_default();
+
+        if opts.create_new && Path::new(&path).exists() {
+            return Err(DenoError::Other("File already exists".to_string()));
         }
-    });
 
-    // writeFileSync(path: string | URL, data: Uint8Array, options?: WriteFileOptions): void
-    add_internal_function!(
-        ctx,
-        "fs.writeFileSync",
-        |path: String, data: Vec<u8>, options: Option<String>| {
-            let opts: Value = options
-                .and_then(|o| serde_json::from_str(&o).ok())
-                .unwrap_or(json!({}));
+        if opts.append {
+            let mut file = fs::OpenOptions::new()
+                .create(opts.create)
+                .append(true)
+                .open(&path)?;
+            use std::io::Write;
+            file.write_all(text.as_bytes())?;
+        } else {
+            fs::write(&path, &text)?;
+        }
+        Ok(())
+    })();
+    result.into()
+}
 
-            let append = opts
-                .get("append")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let create = opts.get("create").and_then(|v| v.as_bool()).unwrap_or(true);
-            let create_new = opts
-                .get("createNew")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+fn fs_stat_sync(path: String) -> JsResult<FileInfo> {
+    let result: DenoResult<FileInfo> = (|| {
+        let metadata = fs::metadata(&path)?;
+        Ok(build_file_info(&metadata))
+    })();
+    result.into()
+}
 
-            if create_new && Path::new(&path).exists() {
-                eprintln!("WriteFileSync error: File already exists");
-                return;
-            }
+fn fs_mkdir_sync(path: String, options: Option<MkdirOptions>) -> JsResult<()> {
+    let result: DenoResult<()> = (|| {
+        let opts = options.unwrap_or_default();
 
-            let result = if append {
-                let mut file = match fs::OpenOptions::new()
-                    .create(create)
-                    .append(true)
-                    .open(&path)
-                {
-                    Ok(f) => f,
-                    Err(e) => {
-                        eprintln!("WriteFileSync error: {}", e);
-                        return;
-                    }
-                };
-                use std::io::Write;
-                file.write_all(&data)
+        if opts.recursive {
+            fs::create_dir_all(&path)?;
+        } else {
+            fs::create_dir(&path)?;
+        }
+        Ok(())
+    })();
+    result.into()
+}
+
+fn fs_remove_sync(path: String, options: Option<RemoveOptions>) -> JsResult<()> {
+    let result: DenoResult<()> = (|| {
+        let opts = options.unwrap_or_default();
+
+        let path_obj = Path::new(&path);
+        if !path_obj.exists() {
+            return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Path not found").into());
+        }
+
+        if path_obj.is_dir() {
+            if opts.recursive {
+                fs::remove_dir_all(&path)?;
             } else {
-                fs::write(&path, &data)
-            };
-
-            if let Err(e) = result {
-                eprintln!("WriteFileSync error: {}", e);
+                fs::remove_dir(&path)?;
             }
+        } else {
+            fs::remove_file(&path)?;
         }
-    );
+        Ok(())
+    })();
+    result.into()
+}
 
-    // writeTextFileSync(path: string | URL, text: string, options?: WriteFileOptions): void
-    add_internal_function!(
-        ctx,
-        "fs.writeTextFileSync",
-        |path: String, text: String, options: Option<String>| {
-            let opts: Value = options
-                .and_then(|o| serde_json::from_str(&o).ok())
-                .unwrap_or(json!({}));
+fn fs_copy_file_sync(from: String, to: String) -> JsResult<()> {
+    let result: DenoResult<()> = (|| {
+        fs::copy(&from, &to)?;
+        Ok(())
+    })();
+    result.into()
+}
 
-            let append = opts
-                .get("append")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let create = opts.get("create").and_then(|v| v.as_bool()).unwrap_or(true);
-            let create_new = opts
-                .get("createNew")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+fn fs_lstat_sync(path: String) -> JsResult<FileInfo> {
+    let result: DenoResult<FileInfo> = (|| {
+        let metadata = fs::symlink_metadata(&path)?;
+        Ok(build_file_info(&metadata))
+    })();
+    result.into()
+}
 
-            if create_new && Path::new(&path).exists() {
-                eprintln!("WriteTextFileSync error: File already exists");
-                return;
-            }
-
-            let result = if append {
-                let mut file = match fs::OpenOptions::new()
-                    .create(create)
-                    .append(true)
-                    .open(&path)
-                {
-                    Ok(f) => f,
-                    Err(e) => {
-                        eprintln!("WriteTextFileSync error: {}", e);
-                        return;
-                    }
-                };
-                use std::io::Write;
-                file.write_all(text.as_bytes())
-            } else {
-                fs::write(&path, &text)
-            };
-
-            if let Err(e) = result {
-                eprintln!("WriteTextFileSync error: {}", e);
-            }
+fn fs_read_dir_sync(path: String) -> JsResult<Vec<DirEntry>> {
+    let result: DenoResult<Vec<DirEntry>> = (|| {
+        let entries = fs::read_dir(&path)?;
+        let mut dir_entries = Vec::new();
+        for entry in entries {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| DenoError::Other("Invalid filename".to_string()))?;
+            dir_entries.push(DirEntry {
+                name,
+                is_file: file_type.is_file(),
+                is_directory: file_type.is_dir(),
+                is_symlink: file_type.is_symlink(),
+            });
         }
-    );
+        Ok(dir_entries)
+    })();
+    result.into()
+}
 
-    // statSync(path: string | URL): FileInfo
-    add_internal_function!(ctx, "fs.statSync", |path: String| -> String {
-        match fs::metadata(&path) {
-            Ok(metadata) => {
-                let file_info = build_file_info(&metadata);
-                file_info.to_string()
-            }
-            Err(e) => {
-                eprintln!("StatSync error: {}", e);
-                String::new()
-            }
-        }
-    });
+fn fs_rename_sync(oldpath: String, newpath: String) -> JsResult<()> {
+    let result: DenoResult<()> = (|| {
+        fs::rename(&oldpath, &newpath)?;
+        Ok(())
+    })();
+    result.into()
+}
 
-    // mkdirSync(path: string | URL, options?: MkdirOptions): void
-    add_internal_function!(
-        ctx,
-        "fs.mkdirSync",
-        |path: String, options: Option<String>| {
-            let opts: Value = options
-                .and_then(|o| serde_json::from_str(&o).ok())
-                .unwrap_or(json!({}));
+fn fs_real_path_sync(path: String) -> JsResult<String> {
+    let result: DenoResult<String> = (|| {
+        let canonical_path = fs::canonicalize(&path)?;
+        Ok(canonical_path.to_string_lossy().to_string())
+    })();
+    result.into()
+}
 
-            let recursive = opts
-                .get("recursive")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+fn fs_truncate_sync(path: String, len: Option<u64>) -> JsResult<()> {
+    let result: DenoResult<()> = (|| {
+        let file = fs::OpenOptions::new().write(true).open(&path)?;
+        let new_len = len.unwrap_or(0);
+        file.set_len(new_len)?;
+        Ok(())
+    })();
+    result.into()
+}
 
-            let result = if recursive {
-                fs::create_dir_all(&path)
-            } else {
-                fs::create_dir(&path)
-            };
+fn fs_make_temp_dir_sync(options: Option<MakeTempOptions>) -> JsResult<String> {
+    let result: DenoResult<String> = (|| {
+        let opts = options.unwrap_or_default();
 
-            if let Err(e) = result {
-                eprintln!("MkdirSync error: {}", e);
-            }
-        }
-    );
+        let prefix = opts.prefix.as_deref().unwrap_or("tmp");
 
-    // removeSync(path: string | URL, options?: RemoveOptions): void
-    add_internal_function!(
-        ctx,
-        "fs.removeSync",
-        |path: String, options: Option<String>| {
-            let opts: Value = options
-                .and_then(|o| serde_json::from_str(&o).ok())
-                .unwrap_or(json!({}));
-
-            let recursive = opts
-                .get("recursive")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-
-            let path_obj = Path::new(&path);
-            let result = if !path_obj.exists() {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Path not found",
-                ))
-            } else if path_obj.is_dir() {
-                if recursive {
-                    fs::remove_dir_all(&path)
-                } else {
-                    fs::remove_dir(&path)
-                }
-            } else {
-                fs::remove_file(&path)
-            };
-
-            if let Err(e) = result {
-                eprintln!("RemoveSync error: {}", e);
-            }
-        }
-    );
-
-    // copyFileSync(fromPath: string | URL, toPath: string | URL): void
-    add_internal_function!(ctx, "fs.copyFileSync", |from: String, to: String| {
-        if let Err(e) = fs::copy(&from, &to) {
-            eprintln!("CopyFileSync error: {}", e);
-        }
-    });
-
-    // lstatSync(path: string | URL): FileInfo
-    // Similar to statSync but doesn't follow symlinks
-    add_internal_function!(ctx, "fs.lstatSync", |path: String| -> String {
-        match fs::symlink_metadata(&path) {
-            Ok(metadata) => {
-                let file_info = build_file_info(&metadata);
-                file_info.to_string()
-            }
-            Err(e) => {
-                eprintln!("LstatSync error: {}", e);
-                String::new()
-            }
-        }
-    });
-
-    // readDirSync(path: string | URL): Iterable<DirEntry>
-    add_internal_function!(ctx, "fs.readDirSync", |path: String| -> String {
-        match fs::read_dir(&path) {
-            Ok(entries) => {
-                let mut dir_entries = Vec::new();
-                for entry in entries {
-                    match entry {
-                        Ok(entry) => {
-                            if let Ok(file_type) = entry.file_type() {
-                                if let Ok(name) = entry.file_name().into_string() {
-                                    dir_entries.push(json!({
-                                        "name": name,
-                                        "isFile": file_type.is_file(),
-                                        "isDirectory": file_type.is_dir(),
-                                        "isSymlink": file_type.is_symlink(),
-                                    }));
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("ReadDirSync entry error: {}", e);
-                        }
-                    }
-                }
-                json!(dir_entries).to_string()
-            }
-            Err(e) => {
-                eprintln!("ReadDirSync error: {}", e);
-                String::new()
-            }
-        }
-    });
-
-    // renameSync(oldpath: string | URL, newpath: string | URL): void
-    add_internal_function!(ctx, "fs.renameSync", |oldpath: String, newpath: String| {
-        if let Err(e) = fs::rename(&oldpath, &newpath) {
-            eprintln!("RenameSync error: {}", e);
-        }
-    });
-
-    // realPathSync(path: string): string
-    add_internal_function!(ctx, "fs.realPathSync", |path: String| -> String {
-        match fs::canonicalize(&path) {
-            Ok(canonical_path) => canonical_path.to_string_lossy().to_string(),
-            Err(e) => {
-                eprintln!("RealPathSync error: {}", e);
-                String::new()
-            }
-        }
-    });
-
-    // truncateSync(path: string, len?: number): void
-    add_internal_function!(ctx, "fs.truncateSync", |path: String, len: Option<u64>| {
-        let file = match fs::OpenOptions::new().write(true).open(&path) {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("TruncateSync error opening file: {}", e);
-                return;
-            }
+        let temp_dir = if let Some(base_dir) = opts.dir.as_deref() {
+            tempfile::Builder::new()
+                .prefix(prefix)
+                .tempdir_in(base_dir)?
+        } else {
+            tempfile::Builder::new().prefix(prefix).tempdir()?
         };
 
-        let new_len = len.unwrap_or(0);
-        if let Err(e) = file.set_len(new_len) {
-            eprintln!("TruncateSync error: {}", e);
-        }
-    });
+        let path = temp_dir.path().to_string_lossy().to_string();
+        // Leak the TempDir to keep it alive (it won't be deleted)
+        std::mem::forget(temp_dir);
+        Ok(path)
+    })();
+    result.into()
+}
+
+fn fs_make_temp_file_sync(options: Option<MakeTempOptions>) -> JsResult<String> {
+    let result: DenoResult<String> = (|| {
+        let opts = options.unwrap_or_default();
+
+        let prefix = opts.prefix.as_deref().unwrap_or("tmp");
+        let suffix = opts.suffix.as_deref().unwrap_or("");
+
+        let temp_file = if let Some(base_dir) = opts.dir.as_deref() {
+            tempfile::Builder::new()
+                .prefix(prefix)
+                .suffix(suffix)
+                .tempfile_in(base_dir)?
+        } else {
+            tempfile::Builder::new()
+                .prefix(prefix)
+                .suffix(suffix)
+                .tempfile()?
+        };
+
+        let path = temp_file.path().to_string_lossy().to_string();
+        // Leak the NamedTempFile to keep it alive (it won't be deleted)
+        std::mem::forget(temp_file);
+        Ok(path)
+    })();
+    result.into()
+}
+
+fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn std::error::Error>> {
+    // Ensure the internal symbol object and nested fs object exist
+    ctx.eval::<(), _>("globalThis[Symbol.for('mdeno.internal')] ||= {}; globalThis[Symbol.for('mdeno.internal')].fs ||= {};")?;
+
+    // cwd(): string - Get current working directory
+    add_internal_function!(ctx, "fs.cwd", fs_cwd);
+
+    // readFileSync(path: string | URL): Uint8Array
+    add_internal_function!(ctx, "fs.readFileSync", fs_read_file_sync);
+
+    // readTextFileSync(path: string | URL): string
+    add_internal_function!(ctx, "fs.readTextFileSync", fs_read_text_file_sync);
+
+    // writeFileSync(path: string | URL, data: Uint8Array, options?: WriteFileOptions): void
+    add_internal_function!(ctx, "fs.writeFileSync", fs_write_file_sync);
+
+    // writeTextFileSync(path: string | URL, text: string, options?: WriteFileOptions): void
+    add_internal_function!(ctx, "fs.writeTextFileSync", fs_write_text_file_sync);
+
+    // statSync(path: string | URL): FileInfo
+    add_internal_function!(ctx, "fs.statSync", fs_stat_sync);
+
+    // mkdirSync(path: string | URL, options?: MkdirOptions): void
+    add_internal_function!(ctx, "fs.mkdirSync", fs_mkdir_sync);
+
+    // removeSync(path: string | URL, options?: RemoveOptions): void
+    add_internal_function!(ctx, "fs.removeSync", fs_remove_sync);
+
+    // copyFileSync(fromPath: string | URL, toPath: string | URL): void
+    add_internal_function!(ctx, "fs.copyFileSync", fs_copy_file_sync);
+
+    // lstatSync(path: string | URL): FileInfo
+    add_internal_function!(ctx, "fs.lstatSync", fs_lstat_sync);
+
+    // readDirSync(path: string | URL): Iterable<DirEntry>
+    add_internal_function!(ctx, "fs.readDirSync", fs_read_dir_sync);
+
+    // renameSync(oldpath: string | URL, newpath: string | URL): void
+    add_internal_function!(ctx, "fs.renameSync", fs_rename_sync);
+
+    // realPathSync(path: string): string
+    add_internal_function!(ctx, "fs.realPathSync", fs_real_path_sync);
+
+    // truncateSync(path: string, len?: number): void
+    add_internal_function!(ctx, "fs.truncateSync", fs_truncate_sync);
 
     // makeTempDirSync(options?: MakeTempOptions): string
-    add_internal_function!(
-        ctx,
-        "fs.makeTempDirSync",
-        |options: Option<String>| -> String {
-            let opts: Value = options
-                .and_then(|o| serde_json::from_str(&o).ok())
-                .unwrap_or(json!({}));
-
-            let prefix = opts.get("prefix").and_then(|v| v.as_str()).unwrap_or("tmp");
-
-            let dir = opts.get("dir").and_then(|v| v.as_str());
-
-            let result = if let Some(base_dir) = dir {
-                tempfile::Builder::new().prefix(prefix).tempdir_in(base_dir)
-            } else {
-                tempfile::Builder::new().prefix(prefix).tempdir()
-            };
-
-            match result {
-                Ok(temp_dir) => {
-                    let path = temp_dir.path().to_string_lossy().to_string();
-                    // Leak the TempDir to keep it alive (it won't be deleted)
-                    std::mem::forget(temp_dir);
-                    path
-                }
-                Err(e) => {
-                    eprintln!("MakeTempDirSync error: {}", e);
-                    String::new()
-                }
-            }
-        }
-    );
+    add_internal_function!(ctx, "fs.makeTempDirSync", fs_make_temp_dir_sync);
 
     // makeTempFileSync(options?: MakeTempOptions): string
-    add_internal_function!(
-        ctx,
-        "fs.makeTempFileSync",
-        |options: Option<String>| -> String {
-            let opts: Value = options
-                .and_then(|o| serde_json::from_str(&o).ok())
-                .unwrap_or(json!({}));
-
-            let prefix = opts.get("prefix").and_then(|v| v.as_str()).unwrap_or("tmp");
-
-            let suffix = opts.get("suffix").and_then(|v| v.as_str()).unwrap_or("");
-
-            let dir = opts.get("dir").and_then(|v| v.as_str());
-
-            let result = if let Some(base_dir) = dir {
-                tempfile::Builder::new()
-                    .prefix(prefix)
-                    .suffix(suffix)
-                    .tempfile_in(base_dir)
-            } else {
-                tempfile::Builder::new()
-                    .prefix(prefix)
-                    .suffix(suffix)
-                    .tempfile()
-            };
-
-            match result {
-                Ok(temp_file) => {
-                    let path = temp_file.path().to_string_lossy().to_string();
-                    // Leak the NamedTempFile to keep it alive (it won't be deleted)
-                    std::mem::forget(temp_file);
-                    path
-                }
-                Err(e) => {
-                    eprintln!("MakeTempFileSync error: {}", e);
-                    String::new()
-                }
-            }
-        }
-    );
+    add_internal_function!(ctx, "fs.makeTempFileSync", fs_make_temp_file_sync);
 
     Ok(())
 }
 
 // Helper function: Build FileInfo from fs::Metadata
-fn build_file_info(metadata: &fs::Metadata) -> Value {
+fn build_file_info(metadata: &fs::Metadata) -> FileInfo {
     let mtime_ms = metadata
         .modified()
         .ok()
@@ -443,8 +464,20 @@ fn build_file_info(metadata: &fs::Metadata) -> Value {
             // On Windows, try to get creation time if available
             use std::os::windows::fs::MetadataExt;
             let ct = metadata.creation_time();
+            // Windows FILETIME is in 100-nanosecond intervals since 1601-01-01
+            // Convert to milliseconds since Unix epoch (1970-01-01)
+            // Matches Deno's windows_time_to_unix_time_msec implementation
+            const WINDOWS_TICK: u64 = 10_000; // 100-nanosecond intervals per millisecond
+            const SEC_TO_UNIX_EPOCH: u64 = 11_644_473_600; // Seconds between 1601 and 1970
+
             if ct > 0 {
-                Some((ct / 10_000_000 - 11_644_473_600_000) as u64)
+                let milliseconds_since_windows_epoch = ct / WINDOWS_TICK;
+                let unix_epoch_ms = SEC_TO_UNIX_EPOCH * 1000;
+                if milliseconds_since_windows_epoch >= unix_epoch_ms {
+                    Some(milliseconds_since_windows_epoch - unix_epoch_ms)
+                } else {
+                    mtime_ms
+                }
             } else {
                 mtime_ms
             }
@@ -456,24 +489,9 @@ fn build_file_info(metadata: &fs::Metadata) -> Value {
         }
     };
 
-    let ctime_ms = {
-        #[cfg(windows)]
-        {
-            // On Windows, use creation time
-            use std::os::windows::fs::MetadataExt;
-            let ct = metadata.creation_time();
-            if ct > 0 {
-                Some((ct / 10_000_000 - 11_644_473_600_000) as u64)
-            } else {
-                mtime_ms
-            }
-        }
-        #[cfg(not(windows))]
-        {
-            // On Unix, we don't have ctime easily available
-            mtime_ms
-        }
-    };
+    // On Windows, ctime is the same as mtime (Deno compatibility)
+    // On Unix, we don't have easy access to ctime, so use mtime
+    let ctime_ms = mtime_ms;
 
     let (ino, mode, nlink, blocks) = {
         #[cfg(unix)]
@@ -498,133 +516,18 @@ fn build_file_info(metadata: &fs::Metadata) -> Value {
         }
     };
 
-    json!({
-        "isFile": metadata.is_file(),
-        "isDirectory": metadata.is_dir(),
-        "isSymlink": metadata.is_symlink(),
-        "size": metadata.len(),
-        "mtime": mtime_ms,
-        "atime": atime_ms,
-        "birthtime": birthtime_ms,
-        "ctime": ctime_ms,
-        "ino": ino,
-        "mode": mode,
-        "nlink": nlink,
-        "blocks": blocks,
-    })
-}
-
-// Helper function: Convert Windows file URL to path
-// Matches Deno's pathFromURLWin32 implementation
-fn path_from_url_win32(pathname: &str, hostname: &str) -> String {
-    // Remove leading slashes and extract drive letter (e.g., /C:/ → C:/)
-    let mut p = if let Some(rest) = pathname.strip_prefix('/') {
-        if rest.len() >= 2 && rest.chars().nth(1) == Some(':') {
-            // Drive letter format
-            rest.to_string()
-        } else {
-            pathname.to_string()
-        }
-    } else {
-        pathname.to_string()
-    };
-
-    // Replace forward slashes with backslashes
-    p = p.replace('/', "\\");
-
-    // Replace unescaped % with %25 (% not followed by two hex digits)
-    let mut result = String::new();
-    let chars: Vec<char> = p.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] == '%' {
-            // Check if followed by exactly two hex digits
-            if i + 2 < chars.len() {
-                let next_two: String = chars[i + 1..=i + 2].iter().collect();
-                if next_two.chars().all(|c| c.is_ascii_hexdigit()) {
-                    result.push('%');
-                    i += 1;
-                    continue;
-                }
-            }
-            result.push_str("%25");
-        } else {
-            result.push(chars[i]);
-        }
-        i += 1;
+    FileInfo {
+        is_file: metadata.is_file(),
+        is_directory: metadata.is_dir(),
+        is_symlink: metadata.is_symlink(),
+        size: metadata.len(),
+        mtime: mtime_ms,
+        atime: atime_ms,
+        birthtime: birthtime_ms,
+        ctime: ctime_ms,
+        ino,
+        mode,
+        nlink,
+        blocks,
     }
-
-    // Simple percent-decoding
-    let mut decoded = String::new();
-    let chars: Vec<char> = result.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] == '%' && i + 2 < chars.len() {
-            let hex_str: String = chars[i + 1..=i + 2].iter().collect();
-            if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
-                decoded.push(byte as char);
-                i += 3;
-                continue;
-            }
-        }
-        decoded.push(chars[i]);
-        i += 1;
-    }
-
-    // Add hostname if present (UNC path)
-    if !hostname.is_empty() {
-        format!("\\\\{}{}", hostname, decoded)
-    } else {
-        decoded
-    }
-}
-
-// Helper function: Convert POSIX file URL to path
-// Matches Deno's pathFromURLPosix implementation
-fn path_from_url_posix(pathname: &str, hostname: &str) -> String {
-    // POSIX doesn't support host names in file URLs
-    if !hostname.is_empty() {
-        return String::new(); // Would be an error in real Deno
-    }
-
-    // Replace unescaped % with %25 (% not followed by two hex digits)
-    let mut result = String::new();
-    let chars: Vec<char> = pathname.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] == '%' {
-            // Check if followed by exactly two hex digits
-            if i + 2 < chars.len() {
-                let next_two: String = chars[i + 1..=i + 2].iter().collect();
-                if next_two.chars().all(|c| c.is_ascii_hexdigit()) {
-                    result.push('%');
-                    i += 1;
-                    continue;
-                }
-            }
-            result.push_str("%25");
-        } else {
-            result.push(chars[i]);
-        }
-        i += 1;
-    }
-
-    // Simple percent-decoding
-    let mut decoded = String::new();
-    let chars: Vec<char> = result.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] == '%' && i + 2 < chars.len() {
-            let hex_str: String = chars[i + 1..=i + 2].iter().collect();
-            if let Ok(byte) = u8::from_str_radix(&hex_str, 16) {
-                decoded.push(byte as char);
-                i += 3;
-                continue;
-            }
-        }
-        decoded.push(chars[i]);
-        i += 1;
-    }
-
-    decoded
 }
