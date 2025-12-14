@@ -1,0 +1,21 @@
+[package]
+name = "mdeno"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "mdeno"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.100"
+clap_lex = "0.7.5"
+libsui = "0.12.2"
+mdeno_runtime = { path = "runtime" }
+utils = { path = "../modules/utils" }
+
+[features]
+default = ["deno_os"]
+deno_os = ["mdeno_runtime/deno_os"]
+vendored-openssl = ["mdeno_runtime/vendored-openssl"]

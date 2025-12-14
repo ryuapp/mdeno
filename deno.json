@@ -4,15 +4,15 @@
     "proseWrap": "preserve"
   },
   "tasks": {
-    "run": "cargo run --release",
-    "run:example": "cargo run --release -- run runtime/example.js",
+    "run": "cargo run --release --bin mdeno",
+    "run:example": "cargo run --release --bin mdeno -- run cli/example.js",
     "build": "cargo build --release",
     "test": "cargo test --release",
     "format": "deno fmt && deno lint --fix && cargo fmt && deno task format:mdx",
     "format:mdx": "deno run -A npm:prettier --write ./docs/src/content/**/*.mdx",
     "check:format": "deno fmt --check && deno lint && cargo fmt --check && deno task check:format:mdx",
     "check:format:mdx": "deno run -A npm:prettier --check ./docs/src/content/**/*.mdx",
-    "compile:example": "cargo run --release -- compile runtime/example.js",
+    "compile:example": "cargo run --release --bin mdeno -- compile cli/example.js",
     "bloat": "cargo bloat --release",
     "check:size": "deno -R scripts/check-size.ts"
   },

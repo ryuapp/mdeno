@@ -908,6 +908,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap_lex",
+ "libsui",
+ "mdeno_runtime",
+ "utils",
+]
+
+[[package]]
+name = "mdeno_runtime"
+version = "0.1.0"
+dependencies = [
  "deno_common",
  "deno_fs",
  "deno_ns",
