@@ -1,0 +1,43 @@
+[package]
+name = "mdeno_runtime"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "mdeno_runtime"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mdenort"
+path = "src/main.rs"
+
+[features]
+default = ["console", "navigator", "url", "encoding", "fetch", "deno_fs", "deno_os", "deno_ns"]
+console = ["dep:web_console"]
+navigator = ["dep:web_navigator"]
+url = ["dep:web_url"]
+encoding = ["dep:web_encoding"]
+fetch = ["dep:web_fetch", "web_fetch?/native-tls"]
+vendored-openssl = ["dep:openssl", "openssl?/vendored"]
+deno_fs = ["dep:deno_fs"]
+deno_os = ["dep:deno_os"]
+deno_ns = ["dep:deno_ns"]
+
+[dependencies]
+rquickjs = { version = "0.10.0", features = ["classes", "properties", "loader"] }
+smol = { version = "2.0.2" }
+utils = { path = "../../modules/utils" }
+libsui = { version = "0.12.2" }
+openssl = { version = "0.10.75", optional = true }
+
+# Modules
+deno_common = { path = "../../modules/deno_common" }
+deno_fs = { path = "../../modules/deno_fs", optional = true }
+deno_ns = { path = "../../modules/deno_ns", optional = true }
+deno_os = { path = "../../modules/deno_os", optional = true }
+web_console = { path = "../../modules/web_console", optional = true }
+web_encoding = { path = "../../modules/web_encoding", optional = true }
+web_fetch = { path = "../../modules/web_fetch", optional = true, default-features = false }
+web_navigator = { path = "../../modules/web_navigator", optional = true }
+web_url = { path = "../../modules/web_url", optional = true }
