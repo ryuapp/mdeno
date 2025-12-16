@@ -1,6 +1,9 @@
 use rquickjs::{Ctx, Module};
 
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
+    // Remove __proto__ to prevent prototype pollution
+    ctx.eval::<(), _>("delete Object.prototype.__proto__")?;
+
     // Initialize __mdeno__ namespace structure
     ctx.eval::<(), _>(
         r#"
