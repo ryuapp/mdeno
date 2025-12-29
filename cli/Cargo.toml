@@ -14,6 +14,12 @@ clap_lex = "0.7.5"
 libsui = "0.12.2"
 mdeno_runtime = { path = "runtime" }
 utils = { path = "../modules/utils" }
+oxc_allocator = "0.105"
+oxc_codegen = "0.105"
+oxc_parser = "0.105"
+oxc_semantic = "0.105"
+oxc_span = "0.105"
+oxc_transformer = "0.105"
 
 [features]
 default = ["deno_os"]

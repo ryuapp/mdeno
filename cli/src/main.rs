@@ -4,6 +4,9 @@ use std::error::Error;
 use std::fs;
 use utils::SECTION_NAME;
 
+mod strip_types;
+use strip_types::transform;
+
 fn main() -> Result<(), Box<dyn Error>> {
     // Check if this executable has embedded bytecode
     if let Ok(Some(bytecode)) = extract_embedded_bytecode() {
@@ -75,16 +78,25 @@ fn main() -> Result<(), Box<dyn Error>> {
         .display()
         .to_string();
 
+    // Read source code
+    let source_code = fs::read_to_string(&absolute_file_path)?;
+
+    // Strip TypeScript if .ts file
+    let js_code = if absolute_file_path_str.ends_with(".ts") {
+        transform(&source_code, &absolute_file_path_str)?
+    } else {
+        source_code
+    };
+
     if is_compile {
         let output_name = absolute_file_path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("output");
 
-        compile_js_to_bytecode(&absolute_file_path_str, output_name)?;
+        compile_to_bytecode_from_code(&js_code, output_name)?;
         println!("Compiled {} to {}", file_path, output_name);
     } else {
-        let js_code = fs::read_to_string(&absolute_file_path)?;
         mdeno_runtime::run_js_code(&js_code)?;
     }
 
@@ -99,11 +111,9 @@ fn extract_embedded_bytecode() -> Result<Option<Vec<u8>>, Box<dyn Error>> {
     }
 }
 
-fn compile_js_to_bytecode(js_file: &str, output_name: &str) -> Result<(), Box<dyn Error>> {
-    let js_code = fs::read_to_string(js_file)?;
-
+fn compile_to_bytecode_from_code(js_code: &str, output_name: &str) -> Result<(), Box<dyn Error>> {
     // Compile JS to bytecode
-    let bytecode = mdeno_runtime::compile_js(&js_code, output_name)?;
+    let bytecode = mdeno_runtime::compile_js(js_code, output_name)?;
 
     // Find mdenort runtime binary
     let current_exe = std::env::current_exe()?;
