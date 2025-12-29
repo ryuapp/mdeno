@@ -80,7 +80,7 @@ jobs:
         if: endsWith(matrix.target, '-musl')
         run: deno task test --target ${{ matrix.target }} --features vendored-openssl
 
-      - name: Collect binary size
+      - name: Collect binary sizes
         run: |
           mkdir -p sizes
           deno task check:size ${{ matrix.target }} > sizes/${{ matrix.target }}.json
@@ -111,8 +111,8 @@ jobs:
         run: |
           echo "## Binary Sizes" > sizes_report.md
           echo "" >> sizes_report.md
-          echo "| Target | Size |" >> sizes_report.md
-          echo "|--------|------|" >> sizes_report.md
+          echo "| Target | mdeno | mdenort |" >> sizes_report.md
+          echo "|--------|-------|---------|" >> sizes_report.md
 
           # Collect and sort by OS: Linux, Apple, Windows
           for pattern in "linux" "apple" "windows"; do
@@ -120,8 +120,9 @@ jobs:
               if [ -f "$json_file" ]; then
                 TARGET=$(jq -r '.target' "$json_file")
                 if [[ "$TARGET" == *"$pattern"* ]]; then
-                  SIZE=$(jq -r '.size' "$json_file")
-                  echo "| $TARGET | $SIZE |" >> sizes_report.md
+                  MDENO=$(jq -r '.mdeno.size // "N/A"' "$json_file")
+                  MDENORT=$(jq -r '.mdenort.size // "N/A"' "$json_file")
+                  echo "| $TARGET | $MDENO | $MDENORT |" >> sizes_report.md
                 fi
               fi
             done
