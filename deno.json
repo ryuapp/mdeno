@@ -14,7 +14,7 @@
     "check:format:mdx": "deno run -A npm:prettier --check ./docs/src/content/**/*.mdx",
     "compile:example": "cargo run --release --bin mdeno -- compile cli/example.ts",
     "bloat": "cargo bloat --release",
-    "check:size": "deno -R scripts/check-size.ts"
+    "check:size": "deno -R scripts/collect-sizes.ts"
   },
   "imports": {
     "prettier": "npm:prettier@3.6.2"
