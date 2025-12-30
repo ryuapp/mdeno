@@ -4,44 +4,52 @@ use std::error::Error;
 use std::fs;
 use utils::SECTION_NAME;
 
+pub mod bundler;
+pub mod jsr;
+mod path_utils;
 mod strip_types;
-use strip_types::transform;
 
-fn main() -> Result<(), Box<dyn Error>> {
-    // Check if this executable has embedded bytecode
-    if let Ok(Some(bytecode)) = extract_embedded_bytecode() {
-        // Standalone binary: args are retrieved directly in deno_os module
-        return mdeno_runtime::run_bytecode(&bytecode);
-    }
+#[derive(Debug, PartialEq)]
+struct CliArgs {
+    command: Command,
+    file_path: String,
+    script_args: Vec<String>,
+    unstable: bool,
+}
 
-    let raw = RawArgs::from_args();
+#[derive(Debug, PartialEq)]
+enum Command {
+    Run,
+    Compile,
+}
+
+fn parse_cli_args_from_vec(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
+    let args_clone = args.clone();
+    let raw = RawArgs::new(args.into_iter());
     let mut cursor = raw.cursor();
     raw.next(&mut cursor); // skip program name
 
     let mut file_path: Option<String> = None;
-    let mut is_compile = false;
+    let mut command = Command::Run;
+    let mut unstable = false;
 
-    if let Some(arg) = raw.next(&mut cursor) {
+    // Parse command and flags
+    while let Some(arg) = raw.next(&mut cursor) {
         if let Ok(value) = arg.to_value() {
             match value {
+                "--unstable" => {
+                    unstable = true;
+                }
                 "compile" => {
-                    is_compile = true;
-                    if let Some(file_arg) = raw.next(&mut cursor) {
-                        if let Ok(file_value) = file_arg.to_value() {
-                            file_path = Some(file_value.to_string());
-                        }
-                    }
+                    command = Command::Compile;
                 }
                 "run" => {
-                    if let Some(file_arg) = raw.next(&mut cursor) {
-                        if let Ok(file_value) = file_arg.to_value() {
-                            file_path = Some(file_value.to_string());
-                        }
-                    }
+                    command = Command::Run;
                 }
                 _ if !value.starts_with('-') => {
-                    // No subcommand, treat as file path (run mode)
+                    // Found file path
                     file_path = Some(value.to_string());
+                    break;
                 }
                 _ => {}
             }
@@ -50,21 +58,42 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let file_path = file_path.ok_or("JavaScript file is required")?;
 
-    // Find the position of the script file in args and take everything after it
-    let all_args: Vec<String> = std::env::args().collect();
-    let script_args: Vec<String> = all_args
-        .iter()
-        .skip_while(|arg| *arg != &file_path)
-        .skip(1) // Skip the file path itself
-        .cloned()
-        .collect();
+    // Find script arguments (everything after the file path)
+    let mut found_file = false;
+    let mut script_args = Vec::new();
+
+    for arg in args_clone.iter() {
+        if found_file {
+            script_args.push(arg.to_string());
+        } else if arg == &file_path {
+            found_file = true;
+        }
+    }
+
+    Ok(CliArgs {
+        command,
+        file_path,
+        script_args,
+        unstable,
+    })
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    // Check if this executable has embedded bytecode
+    if let Ok(Some(bytecode)) = extract_embedded_bytecode() {
+        // Standalone binary: args are retrieved directly in deno_os module
+        return mdeno_runtime::run_bytecode(&bytecode);
+    }
+
+    // Parse command line arguments
+    let cli_args = parse_cli_args_from_vec(std::env::args().collect())?;
 
     // Set script arguments for Deno.args
     #[cfg(feature = "deno_os")]
-    mdeno_runtime::set_script_args(script_args);
+    mdeno_runtime::set_script_args(cli_args.script_args);
 
     // Convert file path to absolute path
-    let file_path_buf = std::path::Path::new(&file_path);
+    let file_path_buf = std::path::Path::new(&cli_args.file_path);
     let absolute_file_path = if file_path_buf.is_absolute() {
         file_path_buf.to_path_buf()
     } else {
@@ -78,26 +107,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         .display()
         .to_string();
 
-    // Read source code
-    let source_code = fs::read_to_string(&absolute_file_path)?;
+    // Use bundler to collect all modules (both for run and compile)
+    let mut bundler = bundler::ModuleBundler::new(cli_args.unstable);
+    let modules = bundler.bundle(&absolute_file_path_str)?;
 
-    // Strip TypeScript if .ts file
-    let js_code = if absolute_file_path_str.ends_with(".ts") {
-        transform(&source_code, &absolute_file_path_str)?
-    } else {
-        source_code
-    };
+    match cli_args.command {
+        Command::Compile => {
+            let output_name = absolute_file_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("output");
 
-    if is_compile {
-        let output_name = absolute_file_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("output");
+            println!("Bundling {} modules...", modules.len());
 
-        compile_to_bytecode_from_code(&js_code, output_name)?;
-        println!("Compiled {} to {}", file_path, output_name);
-    } else {
-        mdeno_runtime::run_js_code(&js_code)?;
+            compile_modules_to_binary(&modules, &absolute_file_path_str, output_name)?;
+            println!("Compiled {} to {}", cli_args.file_path, output_name);
+        }
+        Command::Run => {
+            // Run mode: compile to bytecode and execute
+            let bytecode = mdeno_runtime::compile_modules(modules, absolute_file_path_str.clone())?;
+            mdeno_runtime::run_bytecode(&bytecode)?;
+        }
     }
 
     Ok(())
@@ -111,9 +141,13 @@ fn extract_embedded_bytecode() -> Result<Option<Vec<u8>>, Box<dyn Error>> {
     }
 }
 
-fn compile_to_bytecode_from_code(js_code: &str, output_name: &str) -> Result<(), Box<dyn Error>> {
-    // Compile JS to bytecode
-    let bytecode = mdeno_runtime::compile_js(js_code, output_name)?;
+fn compile_modules_to_binary(
+    modules: &std::collections::HashMap<String, String>,
+    entry_point: &str,
+    output_name: &str,
+) -> Result<(), Box<dyn Error>> {
+    // Compile all modules to bytecode map
+    let bytecode = mdeno_runtime::compile_modules(modules.clone(), entry_point.to_string())?;
 
     // Find mdenort runtime binary
     let current_exe = std::env::current_exe()?;

@@ -46,3 +46,70 @@ pub fn transform(source: &str, filename: &str) -> Result<String, Box<dyn Error>>
 
     Ok(code)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_type_annotation() {
+        let input = "const x: number = 42;";
+        let output = transform(input, "test.ts").unwrap();
+
+        assert!(!output.contains(": number"));
+        assert!(output.contains("const x"));
+        assert!(output.contains("= 42"));
+    }
+
+    #[test]
+    fn test_strip_interface() {
+        let input = r#"
+            interface Person {
+                name: string;
+                age: number;
+            }
+            const p = { name: "Alice", age: 30 };
+        "#;
+
+        let output = transform(input, "test.ts").unwrap();
+
+        assert!(!output.contains("interface"));
+        assert!(output.contains("const p"));
+    }
+
+    #[test]
+    fn test_strip_function_types() {
+        let input = "function greet(name: string): string { return name; }";
+        let output = transform(input, "test.ts").unwrap();
+
+        assert!(!output.contains(": string"));
+        assert!(output.contains("function greet(name)"));
+    }
+
+    #[test]
+    fn test_strip_generic_types() {
+        let input = "function identity<T>(x: T): T { return x; }";
+        let output = transform(input, "test.ts").unwrap();
+
+        assert!(!output.contains("<T>"));
+        assert!(!output.contains(": T"));
+    }
+
+    #[test]
+    fn test_parse_error_handling() {
+        let input = "const x = {{{"; // Invalid syntax
+        let result = transform(input, "test.ts");
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Parse error"));
+    }
+
+    #[test]
+    fn test_preserve_javascript() {
+        let input = "const x = 42; console.log(x);";
+        let output = transform(input, "test.js").unwrap();
+
+        assert!(output.contains("const x = 42"));
+        assert!(output.contains("console.log(x)"));
+    }
+}
