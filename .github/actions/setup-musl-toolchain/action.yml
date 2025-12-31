@@ -21,8 +21,8 @@ runs:
         build-args: |
           RUST_TARGET=${{ inputs.target }}
           UBUNTU_VERSION=24.04
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: type=gha,scope=${{ inputs.target }}
+        cache-to: type=gha,mode=max,scope=${{ inputs.target }}
         load: true
         tags: musl-toolchain:latest
 
