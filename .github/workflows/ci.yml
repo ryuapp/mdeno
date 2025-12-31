@@ -60,11 +60,12 @@ jobs:
       - name: Setup Deno
         run: npm i -g deno
 
-      - name: Cache musl tools
+      - name: Setup musl toolchain
         if: endsWith(matrix.target, '-musl')
-        uses: awalsh128/cache-apt-pkgs-action@v1
+        uses: ./.github/actions/setup-musl-toolchain
         with:
-          packages: musl-tools pkg-config
+          target: ${{ matrix.target }}
+
       - name: Add target
         run: rustup target add ${{ matrix.target }}
       - name: Build

@@ -1,6 +1,5 @@
 use rquickjs::{Ctx, Module};
 use std::error::Error;
-use url::Url;
 use utils::add_internal_function;
 
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
@@ -32,31 +31,25 @@ fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn parse_url(url_str: String, base: String) -> Result<String, String> {
-    let parsed = if base.is_empty() {
-        Url::parse(&url_str).map_err(|e| e.to_string())?
+    let base_ref = if base.is_empty() {
+        None
     } else {
-        let base_url = Url::parse(&base).map_err(|e| e.to_string())?;
-        base_url.join(&url_str).map_err(|e| e.to_string())?
+        Some(base.as_str())
     };
+    let parsed = ada_url::Url::parse(&url_str, base_ref).map_err(|_| "Invalid URL".to_string())?;
 
     let json = serde_json::json!({
-        "href": parsed.as_str(),
-        "origin": format!("{}://{}", parsed.scheme(), parsed.host_str().unwrap_or("")),
-        "protocol": format!("{}:", parsed.scheme()),
+        "href": parsed.href(),
+        "origin": parsed.origin(),
+        "protocol": parsed.protocol(),
         "username": parsed.username(),
-        "password": parsed.password().unwrap_or(""),
-        "host": parsed.host_str().map(|h| {
-            if let Some(port) = parsed.port() {
-                format!("{}:{}", h, port)
-            } else {
-                h.to_string()
-            }
-        }).unwrap_or_default(),
-        "hostname": parsed.host_str().unwrap_or(""),
-        "port": parsed.port().map(|p| p.to_string()).unwrap_or_default(),
-        "pathname": parsed.path(),
-        "search": parsed.query().map(|q| format!("?{}", q)).unwrap_or_default(),
-        "hash": parsed.fragment().map(|f| format!("#{}", f)).unwrap_or_default(),
+        "password": parsed.password(),
+        "host": parsed.host(),
+        "hostname": parsed.hostname(),
+        "port": parsed.port(),
+        "pathname": parsed.pathname(),
+        "search": parsed.search(),
+        "hash": parsed.hash(),
     });
 
     Ok(serde_json::to_string(&json).unwrap())
@@ -67,83 +60,70 @@ pub fn set_url_component(
     component: String,
     value: String,
 ) -> Result<String, String> {
-    let mut parsed = Url::parse(&url_str).map_err(|e| e.to_string())?;
+    let mut parsed = ada_url::Url::parse(&url_str, None).map_err(|_| "Invalid URL".to_string())?;
 
     match component.as_str() {
         "protocol" => {
             let scheme = value.trim_end_matches(':');
-            parsed
-                .set_scheme(scheme)
-                .map_err(|_| "Invalid protocol".to_string())?;
+            let _ = parsed.set_protocol(scheme);
         }
         "username" => {
-            parsed
-                .set_username(&value)
-                .map_err(|_| "Invalid username".to_string())?;
+            let _ = parsed.set_username(Some(value.as_str()));
         }
         "password" => {
-            parsed
-                .set_password(Some(&value))
-                .map_err(|_| "Invalid password".to_string())?;
+            if value.is_empty() {
+                let _ = parsed.set_password(None);
+            } else {
+                let _ = parsed.set_password(Some(value.as_str()));
+            }
         }
         "host" => {
-            parsed.set_host(Some(&value)).map_err(|e| e.to_string())?;
+            let _ = parsed.set_host(Some(value.as_str()));
         }
         "hostname" => {
-            parsed.set_host(Some(&value)).map_err(|e| e.to_string())?;
+            let _ = parsed.set_hostname(Some(value.as_str()));
         }
         "port" => {
             if value.is_empty() {
-                parsed
-                    .set_port(None)
-                    .map_err(|_| "Invalid port".to_string())?;
+                let _ = parsed.set_port(None);
             } else {
-                let port: u16 = value.parse().map_err(|_| "Invalid port".to_string())?;
-                parsed
-                    .set_port(Some(port))
-                    .map_err(|_| "Invalid port".to_string())?;
+                let _ = parsed.set_port(Some(value.as_str()));
             }
         }
         "pathname" => {
-            parsed.set_path(&value);
+            let _ = parsed.set_pathname(Some(value.as_str()));
         }
         "search" => {
             let query = value.trim_start_matches('?');
             if query.is_empty() {
-                parsed.set_query(None);
+                let _ = parsed.set_search(None);
             } else {
-                parsed.set_query(Some(query));
+                let _ = parsed.set_search(Some(query));
             }
         }
         "hash" => {
             let fragment = value.trim_start_matches('#');
             if fragment.is_empty() {
-                parsed.set_fragment(None);
+                let _ = parsed.set_hash(None);
             } else {
-                parsed.set_fragment(Some(fragment));
+                let _ = parsed.set_hash(Some(fragment));
             }
         }
         _ => return Err("Unknown component".to_string()),
     }
 
     let json = serde_json::json!({
-        "href": parsed.as_str(),
-        "origin": format!("{}://{}", parsed.scheme(), parsed.host_str().unwrap_or("")),
-        "protocol": format!("{}:", parsed.scheme()),
+        "href": parsed.href(),
+        "origin": parsed.origin(),
+        "protocol": parsed.protocol(),
         "username": parsed.username(),
-        "password": parsed.password().unwrap_or(""),
-        "host": parsed.host_str().map(|h| {
-            if let Some(port) = parsed.port() {
-                format!("{}:{}", h, port)
-            } else {
-                h.to_string()
-            }
-        }).unwrap_or_default(),
-        "hostname": parsed.host_str().unwrap_or(""),
-        "port": parsed.port().map(|p| p.to_string()).unwrap_or_default(),
-        "pathname": parsed.path(),
-        "search": parsed.query().map(|q| format!("?{}", q)).unwrap_or_default(),
-        "hash": parsed.fragment().map(|f| format!("#{}", f)).unwrap_or_default(),
+        "password": parsed.password(),
+        "host": parsed.host(),
+        "hostname": parsed.hostname(),
+        "port": parsed.port(),
+        "pathname": parsed.pathname(),
+        "search": parsed.search(),
+        "hash": parsed.hash(),
     });
 
     Ok(serde_json::to_string(&json).unwrap())
