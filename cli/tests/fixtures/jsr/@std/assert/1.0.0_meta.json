@@ -1,0 +1,1 @@
+{ "exports": { ".": "./mod.ts", "./equals": "./equals.ts" } }

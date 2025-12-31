@@ -1,0 +1,338 @@
+use crate::strip_types::transform;
+use oxc_allocator::Allocator;
+use oxc_ast::ast::*;
+use oxc_parser::Parser;
+use oxc_span::SourceType;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+const JSR_URL: &str = "https://jsr.io";
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct JsrVersionMetadata {
+    pub exports: HashMap<String, String>,
+}
+
+pub struct JsrResolver {
+    cache_dir: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct ParsedSpecifier {
+    pub scope: String,
+    pub package: String,
+    pub version: Option<String>,
+    pub file_path: Option<String>,
+}
+
+impl JsrResolver {
+    pub fn new() -> Self {
+        let cache_dir = if cfg!(windows) {
+            let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| {
+                std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string())
+            });
+            PathBuf::from(local_app_data).join(".mdeno").join("jsr")
+        } else {
+            // macOS, Linux and other Unix-like systems
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            PathBuf::from(home).join(".mdeno").join("jsr")
+        };
+
+        Self { cache_dir }
+    }
+
+    pub fn parse_specifier(specifier: &str) -> Result<ParsedSpecifier, String> {
+        // Parse jsr:@scope/package[@version]/path
+        let without_prefix = specifier
+            .strip_prefix("jsr:")
+            .ok_or("Not a JSR specifier")?;
+
+        let parts: Vec<&str> = without_prefix.splitn(2, '/').collect();
+        if parts.len() != 2 {
+            return Err("Invalid JSR specifier format".to_string());
+        }
+
+        let scope = parts[0]; // @scope
+        let rest = parts[1]; // package[@version]/path or package[@version]
+
+        // Split package[@version] and optional path
+        let (package_with_version, file_path) = if let Some(slash_pos) = rest.find('/') {
+            (&rest[..slash_pos], Some(&rest[slash_pos + 1..]))
+        } else {
+            (rest, None)
+        };
+
+        // Split package and version
+        let (package, version) = if let Some(at_pos) = package_with_version.find('@') {
+            (
+                &package_with_version[..at_pos],
+                Some(&package_with_version[at_pos + 1..]),
+            )
+        } else {
+            (package_with_version, None)
+        };
+
+        Ok(ParsedSpecifier {
+            scope: scope.to_string(),
+            package: package.to_string(),
+            version: version.map(|s| s.to_string()),
+            file_path: file_path.map(|s| s.to_string()),
+        })
+    }
+
+    /// Resolve jsr:@scope/package@version/path to cached file path and all dependencies
+    pub fn resolve(&self, specifier: &str) -> Result<HashMap<String, PathBuf>, String> {
+        let parsed = Self::parse_specifier(specifier)?;
+        let full_package = format!("{}/{}", parsed.scope, parsed.package);
+
+        // Version must be specified
+        let resolved_version = parsed
+            .version
+            .ok_or("Version must be specified in JSR import")?;
+
+        // Determine file path from exports
+        let exports = self.fetch_exports(&full_package, &resolved_version)?;
+        let export_key = if let Some(path) = parsed.file_path {
+            // Export name provided (e.g., "assert_equals" from jsr:@std/assert@1.0.0/assert_equals)
+            format!("./{}", path)
+        } else {
+            // No export name, use default export
+            ".".to_string()
+        };
+
+        let file = exports
+            .get(&export_key)
+            .map(|s| s.as_str())
+            .ok_or_else(|| format!("Export '{}' not found in package", export_key))?
+            .trim_start_matches("./")
+            .to_string();
+
+        // Download and cache the file and all its dependencies
+        let mut module_map = HashMap::new();
+        self.fetch_file_with_deps(
+            &full_package,
+            &resolved_version,
+            &file,
+            &mut module_map,
+            &mut HashSet::new(),
+        )?;
+
+        Ok(module_map)
+    }
+
+    fn fetch_file_with_deps(
+        &self,
+        package: &str,
+        version: &str,
+        file_path: &str,
+        module_map: &mut HashMap<String, PathBuf>,
+        visited: &mut HashSet<String>,
+    ) -> Result<(), String> {
+        // Check if already visited
+        let visit_key = format!("{}/{}/{}", package, version, file_path);
+        if visited.contains(&visit_key) {
+            return Ok(());
+        }
+        visited.insert(visit_key.clone());
+
+        // Construct JSR specifier for this file
+        let file_without_ext = file_path.trim_start_matches("./").trim_end_matches(".ts");
+        let jsr_specifier = format!(
+            "jsr:{}/{}@{}/{}",
+            package.split('/').next().unwrap(),
+            package.split('/').nth(1).unwrap(),
+            version,
+            file_without_ext
+        );
+
+        // Download the file
+        let cache_path = self.fetch_file_impl(package, version, file_path)?;
+        module_map.insert(jsr_specifier, cache_path.clone());
+
+        // Read the cached file to extract dependencies
+        let content = fs::read_to_string(&cache_path)
+            .map_err(|e| format!("Failed to read cached file: {}", e))?;
+
+        // Extract relative imports
+        let imports = self.extract_relative_imports(&content);
+        for import_path in imports {
+            // Convert .js back to .ts for fetching
+            let import_path_ts = if import_path.ends_with(".js") {
+                import_path.strip_suffix(".js").unwrap().to_string() + ".ts"
+            } else {
+                import_path.clone()
+            };
+
+            // Resolve relative path
+            let base_dir = Path::new(file_path).parent().unwrap_or(Path::new(""));
+            let resolved = base_dir.join(&import_path_ts);
+            let normalized = resolved
+                .to_str()
+                .ok_or("Failed to normalize path")?
+                .replace('\\', "/")
+                .trim_start_matches("./")
+                .to_string();
+
+            // Recursively fetch dependencies
+            self.fetch_file_with_deps(package, version, &normalized, module_map, visited)?;
+        }
+
+        Ok(())
+    }
+
+    fn fetch_file_impl(
+        &self,
+        package: &str,
+        version: &str,
+        file_path: &str,
+    ) -> Result<PathBuf, String> {
+        // Determine cache file path (.ts files are cached as .js)
+        let cache_file_path = if file_path.ends_with(".ts") {
+            file_path.strip_suffix(".ts").unwrap().to_string() + ".js"
+        } else {
+            file_path.to_string()
+        };
+
+        let cache_path = self
+            .cache_dir
+            .join(package)
+            .join(version)
+            .join(&cache_file_path);
+
+        // Check cache first
+        if cache_path.exists() {
+            return Ok(cache_path);
+        }
+
+        // Download from JSR
+        let file_url = format!("{}/{}/{}/{}", JSR_URL, package, version, file_path);
+
+        let agent = ureq::config::Config::builder()
+            .tls_config(
+                ureq::tls::TlsConfig::builder()
+                    .provider(ureq::tls::TlsProvider::NativeTls)
+                    .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+                    .build(),
+            )
+            .build()
+            .new_agent();
+
+        let mut response = agent
+            .get(&file_url)
+            .call()
+            .map_err(|e| format!("Failed to fetch JSR file: {}", e))?;
+
+        let mut content = response
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| format!("Failed to read JSR file: {}", e))?;
+
+        // Strip TypeScript if .ts file
+        if file_path.ends_with(".ts") {
+            content = transform(&content, file_path)
+                .map_err(|e| format!("Failed to strip TypeScript: {}", e))?;
+        }
+
+        // Rewrite .ts imports to .js
+        content = self.rewrite_ts_imports(&content);
+
+        // Create cache directory
+        if let Some(parent) = cache_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create cache directory: {}", e))?;
+        }
+
+        // Write to cache
+        fs::write(&cache_path, content).map_err(|e| format!("Failed to write cache: {}", e))?;
+
+        Ok(cache_path)
+    }
+
+    fn fetch_exports(
+        &self,
+        package: &str,
+        version: &str,
+    ) -> Result<HashMap<String, String>, String> {
+        let meta_url = format!("{}/{}/{}_meta.json", JSR_URL, package, version);
+
+        let agent = ureq::config::Config::builder()
+            .tls_config(
+                ureq::tls::TlsConfig::builder()
+                    .provider(ureq::tls::TlsProvider::NativeTls)
+                    .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+                    .build(),
+            )
+            .build()
+            .new_agent();
+
+        let mut response = agent
+            .get(&meta_url)
+            .call()
+            .map_err(|e| format!("Failed to fetch JSR version metadata: {}", e))?;
+
+        let body = response
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| format!("Failed to read JSR version metadata: {}", e))?;
+
+        let metadata: JsrVersionMetadata = serde_json::from_str(&body)
+            .map_err(|e| format!("Failed to parse JSR version metadata: {}", e))?;
+
+        Ok(metadata.exports)
+    }
+
+    fn rewrite_ts_imports(&self, content: &str) -> String {
+        // Simple regex-based rewrite of .ts imports to .js
+        // This handles: import ... from "./foo.ts" and export ... from "./foo.ts"
+        content
+            .replace(r#"from "./\"#, "FROM_PLACEHOLDER_")
+            .replace(r#"from '../\"#, "FROM_PARENT_PLACEHOLDER_")
+            .replace(r#".ts""#, r#".js""#)
+            .replace(r#".ts'"#, r#".js'"#)
+            .replace("FROM_PLACEHOLDER_", r#"from "./"#)
+            .replace("FROM_PARENT_PLACEHOLDER_", r#"from '../"#)
+    }
+
+    fn extract_relative_imports(&self, source: &str) -> Vec<String> {
+        let allocator = Allocator::default();
+        let source_type = SourceType::mjs();
+
+        let parser_ret = Parser::new(&allocator, source, source_type).parse();
+        if !parser_ret.errors.is_empty() {
+            return Vec::new(); // Skip parse errors
+        }
+
+        let mut imports = Vec::new();
+
+        // Extract import declarations
+        for stmt in &parser_ret.program.body {
+            match stmt {
+                Statement::ImportDeclaration(import_decl) => {
+                    let source = import_decl.source.value.as_str();
+                    if source.starts_with("./") || source.starts_with("../") {
+                        imports.push(source.to_string());
+                    }
+                }
+                Statement::ExportNamedDeclaration(export_decl) => {
+                    if let Some(source) = &export_decl.source {
+                        let source_str = source.value.as_str();
+                        if source_str.starts_with("./") || source_str.starts_with("../") {
+                            imports.push(source_str.to_string());
+                        }
+                    }
+                }
+                Statement::ExportAllDeclaration(export_all) => {
+                    let source = export_all.source.value.as_str();
+                    if source.starts_with("./") || source.starts_with("../") {
+                        imports.push(source.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        imports
+    }
+}

@@ -1,6 +1,8 @@
+use crate::path_utils::normalize_path;
 use rquickjs::loader::{Loader, Resolver};
 use rquickjs::{Ctx, Error, Module, Result};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use utils::ModuleDef;
 
@@ -128,13 +130,48 @@ impl NodeResolver {
 }
 
 impl Resolver for NodeResolver {
-    fn resolve(&mut self, _ctx: &Ctx, _base: &str, name: &str) -> Result<String> {
+    fn resolve(&mut self, _ctx: &Ctx, base: &str, name: &str) -> Result<String> {
+        // Check if it's a built-in module first
         if self.registry.has_module(name) {
-            Ok(name.to_string())
-        } else {
-            Err(Error::new_resolving(name, "Unknown node module"))
+            return Ok(name.to_string());
         }
+
+        // JSR imports are not supported at runtime - they should be resolved at compile time
+        if name.starts_with("jsr:") {
+            return Err(Error::new_resolving(
+                name,
+                "JSR imports must be resolved at compile time",
+            ));
+        }
+
+        // Handle relative paths (./xxx or ../xxx)
+        if name.starts_with("./") || name.starts_with("../") {
+            let base_path = Path::new(base);
+            let base_dir = if base_path.is_file() {
+                base_path.parent().unwrap_or(Path::new("."))
+            } else {
+                base_path
+            };
+
+            let resolved = base_dir.join(name);
+
+            // Try with the exact path
+            if let Some(path) = try_resolve_file(&resolved) {
+                return Ok(path);
+            }
+        }
+
+        Err(Error::new_resolving(name, "Module not found"))
     }
+}
+
+fn try_resolve_file(path: &Path) -> Option<String> {
+    // Try exact path only
+    if path.exists() && path.is_file() {
+        return path.to_str().map(|s| s.to_string());
+    }
+
+    None
 }
 
 pub struct NodeLoader {
@@ -147,13 +184,297 @@ impl NodeLoader {
     }
 }
 
+// Bytecode map resolver and loader
+pub struct BytecodeMapResolver {
+    registry: Arc<ModuleRegistry>,
+    bytecode_map: std::collections::HashMap<String, Vec<u8>>,
+}
+
+impl BytecodeMapResolver {
+    pub fn new(
+        registry: Arc<ModuleRegistry>,
+        bytecode_map: std::collections::HashMap<String, Vec<u8>>,
+    ) -> Self {
+        Self {
+            registry,
+            bytecode_map,
+        }
+    }
+}
+
+impl Resolver for BytecodeMapResolver {
+    fn resolve(&mut self, _ctx: &Ctx, base: &str, name: &str) -> Result<String> {
+        // Check built-in modules
+        if self.registry.has_module(name) {
+            return Ok(name.to_string());
+        }
+
+        // Check if module exists in bytecode map
+        if self.bytecode_map.contains_key(name) {
+            return Ok(name.to_string());
+        }
+
+        // JSR imports are not supported at runtime - they should be resolved at compile time
+        if name.starts_with("jsr:") {
+            return Err(Error::new_resolving(
+                name,
+                "JSR imports must be resolved at compile time",
+            ));
+        }
+
+        // Handle relative paths
+        if name.starts_with("./") || name.starts_with("../") {
+            // Check if base is a JSR specifier
+            if base.starts_with("jsr:") {
+                // Parse JSR specifier: jsr:@scope/package@version/path
+                // Resolve relative path within the same JSR package
+                if let Some(base_path_start) = base.rfind('/') {
+                    let base_prefix = &base[..base_path_start]; // jsr:@scope/package@version
+                    let relative_path = name.trim_start_matches("./").trim_end_matches(".js");
+                    let resolved_jsr = format!("{}/{}", base_prefix, relative_path);
+
+                    if self.bytecode_map.contains_key(&resolved_jsr) {
+                        return Ok(resolved_jsr);
+                    }
+                }
+            } else {
+                // Regular file path resolution
+                let base_path = Path::new(base);
+                let base_dir = if base_path.is_file() {
+                    base_path.parent().unwrap_or(Path::new("."))
+                } else {
+                    base_path
+                };
+
+                let resolved = base_dir.join(name);
+                let resolved_str = resolved.to_string_lossy().to_string();
+
+                // Check if resolved path exists in bytecode map
+                if self.bytecode_map.contains_key(&resolved_str) {
+                    return Ok(resolved_str);
+                }
+
+                // Try with canonical path
+                if let Ok(canonical) = resolved.canonicalize() {
+                    let canonical_str = normalize_path(&canonical);
+                    if self.bytecode_map.contains_key(&canonical_str) {
+                        return Ok(canonical_str);
+                    }
+                }
+            }
+        }
+
+        Err(Error::new_resolving(name, "Module not found"))
+    }
+}
+
+pub struct BytecodeMapLoader {
+    registry: Arc<ModuleRegistry>,
+    bytecode_map: std::collections::HashMap<String, Vec<u8>>,
+}
+
+impl BytecodeMapLoader {
+    pub fn new(
+        registry: Arc<ModuleRegistry>,
+        bytecode_map: std::collections::HashMap<String, Vec<u8>>,
+    ) -> Self {
+        Self {
+            registry,
+            bytecode_map,
+        }
+    }
+}
+
+impl Loader for BytecodeMapLoader {
+    fn load<'js>(&mut self, ctx: &Ctx<'js>, name: &str) -> Result<Module<'js>> {
+        // Try built-in modules first
+        if let Some(source) = self.registry.get_source(name) {
+            return Module::declare(ctx.clone(), name, source);
+        }
+
+        // Load from bytecode map
+        if let Some(bytecode) = self.bytecode_map.get(name) {
+            return unsafe { Module::load(ctx.clone(), bytecode) };
+        }
+
+        // Load from file system (JS files only - for external modules)
+        let path = Path::new(name);
+        if path.exists() && path.is_file() {
+            // TypeScript files are not supported at runtime - they must be compiled first
+            if name.ends_with(".ts") {
+                return Err(Error::new_loading_message(
+                    name,
+                    "TypeScript files must be compiled first",
+                ));
+            }
+
+            let source = std::fs::read_to_string(path)
+                .map_err(|e| Error::new_loading_message(name, e.to_string()))?;
+
+            return Module::declare(ctx.clone(), name, source);
+        }
+
+        Err(Error::new_loading(name))
+    }
+}
+
 impl Loader for NodeLoader {
     fn load<'js>(&mut self, ctx: &Ctx<'js>, name: &str) -> Result<Module<'js>> {
-        let source = self
-            .registry
-            .get_source(name)
-            .ok_or_else(|| Error::new_loading(name))?;
+        // Try built-in modules first
+        if let Some(source) = self.registry.get_source(name) {
+            return Module::declare(ctx.clone(), name, source);
+        }
 
-        Module::declare(ctx.clone(), name, source)
+        // Load from file system (JS files only)
+        let path = Path::new(name);
+        if path.exists() && path.is_file() {
+            // TypeScript files are not supported at runtime - they must be compiled first
+            if name.ends_with(".ts") {
+                return Err(Error::new_loading_message(
+                    name,
+                    "TypeScript files must be compiled first",
+                ));
+            }
+
+            let source = std::fs::read_to_string(path)
+                .map_err(|e| Error::new_loading_message(name, e.to_string()))?;
+
+            return Module::declare(ctx.clone(), name, source);
+        }
+
+        Err(Error::new_loading(name))
+    }
+}
+
+// Source map resolver and loader (for compile-time)
+pub struct SourceMapResolver {
+    registry: Arc<ModuleRegistry>,
+    source_map: std::collections::HashMap<String, String>,
+}
+
+impl SourceMapResolver {
+    pub fn new(
+        registry: Arc<ModuleRegistry>,
+        source_map: std::collections::HashMap<String, String>,
+    ) -> Self {
+        Self {
+            registry,
+            source_map,
+        }
+    }
+}
+
+impl Resolver for SourceMapResolver {
+    fn resolve(&mut self, _ctx: &Ctx, base: &str, name: &str) -> Result<String> {
+        // Check built-in modules
+        if self.registry.has_module(name) {
+            return Ok(name.to_string());
+        }
+
+        // Check if module exists in source map
+        if self.source_map.contains_key(name) {
+            return Ok(name.to_string());
+        }
+
+        // JSR imports are not supported - they should be resolved during bundling
+        if name.starts_with("jsr:") {
+            return Err(Error::new_resolving(
+                name,
+                "JSR imports must be resolved during bundling",
+            ));
+        }
+
+        // Handle relative paths
+        if name.starts_with("./") || name.starts_with("../") {
+            // Check if base is a JSR specifier
+            if base.starts_with("jsr:") {
+                // Parse JSR specifier: jsr:@scope/package@version/path
+                // Resolve relative path within the same JSR package
+                if let Some(base_path_start) = base.rfind('/') {
+                    let base_prefix = &base[..base_path_start]; // jsr:@scope/package@version
+                    let relative_path = name.trim_start_matches("./").trim_end_matches(".js");
+                    let resolved_jsr = format!("{}/{}", base_prefix, relative_path);
+
+                    if self.source_map.contains_key(&resolved_jsr) {
+                        return Ok(resolved_jsr);
+                    }
+                }
+            } else {
+                // Regular file path resolution
+                let base_path = Path::new(base);
+                let base_dir = if base_path.is_file() {
+                    base_path.parent().unwrap_or(Path::new("."))
+                } else {
+                    base_path
+                };
+
+                let resolved = base_dir.join(name);
+
+                // Try with canonical path
+                if let Ok(canonical) = resolved.canonicalize() {
+                    let canonical_str = normalize_path(&canonical);
+                    if self.source_map.contains_key(&canonical_str) {
+                        return Ok(canonical_str);
+                    }
+                }
+
+                let resolved_str = resolved.to_string_lossy().to_string();
+                if self.source_map.contains_key(&resolved_str) {
+                    return Ok(resolved_str);
+                }
+            }
+        }
+
+        Err(Error::new_resolving(name, "Module not found"))
+    }
+}
+
+pub struct SourceMapLoader {
+    registry: Arc<ModuleRegistry>,
+    source_map: std::collections::HashMap<String, String>,
+}
+
+impl SourceMapLoader {
+    pub fn new(
+        registry: Arc<ModuleRegistry>,
+        source_map: std::collections::HashMap<String, String>,
+    ) -> Self {
+        Self {
+            registry,
+            source_map,
+        }
+    }
+}
+
+impl Loader for SourceMapLoader {
+    fn load<'js>(&mut self, ctx: &Ctx<'js>, name: &str) -> Result<Module<'js>> {
+        // Try built-in modules first
+        if let Some(source) = self.registry.get_source(name) {
+            return Module::declare(ctx.clone(), name, source);
+        }
+
+        // Load from source map
+        if let Some(source) = self.source_map.get(name) {
+            return Module::declare(ctx.clone(), name, source.as_str());
+        }
+
+        // Load from file system (JS files only - for external modules)
+        let path = Path::new(name);
+        if path.exists() && path.is_file() {
+            // TypeScript files are not supported at runtime - they must be compiled first
+            if name.ends_with(".ts") {
+                return Err(Error::new_loading_message(
+                    name,
+                    "TypeScript files must be compiled first",
+                ));
+            }
+
+            let source = std::fs::read_to_string(path)
+                .map_err(|e| Error::new_loading_message(name, e.to_string()))?;
+
+            return Module::declare(ctx.clone(), name, source);
+        }
+
+        Err(Error::new_loading(name))
     }
 }
