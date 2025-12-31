@@ -1,5 +1,5 @@
 {
-  "workspace": ["./docs", "./scripts"],
+  "workspace": ["./scripts"],
   "fmt": {
     "proseWrap": "preserve"
   },
@@ -8,16 +8,10 @@
     "run:example": "cargo run --release --bin mdeno -- run cli/example.ts",
     "build": "cargo build --release",
     "test": "cargo test --release",
-    "format": "deno fmt && deno lint --fix && cargo fmt && deno task format:mdx",
-    "format:mdx": "deno run -A npm:prettier --write ./docs/src/content/**/*.mdx",
-    "check:format": "deno fmt --check && deno lint && cargo fmt --check && deno task check:format:mdx",
-    "check:format:mdx": "deno run -A npm:prettier --check ./docs/src/content/**/*.mdx",
+    "format": "deno fmt && deno lint --fix && cargo fmt",
+    "check:format": "deno fmt --check && deno lint && cargo fmt --check",
     "compile:example": "cargo run --release --bin mdeno -- compile cli/example.ts",
     "bloat": "cargo bloat --release",
     "check:size": "deno -R scripts/collect-sizes.ts"
-  },
-  "imports": {
-    "prettier": "npm:prettier@3.6.2"
-  },
-  "nodeModulesDir": "auto"
+  }
 }
