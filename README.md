@@ -11,11 +11,11 @@ cargo install --git https://github.com/ryuapp/mdeno mdeno
 ## How to use
 
 ```sh
-# Run JavaScript code
-mdeno run hello.js
+# Run a JavaScript/TypeScript file
+mdeno run hello.ts
 
-# Compile JavaScript into a self-contained executable
-mdeno compile hello.js
+# Compile a JavaScript/TypeScript file into a self-contained executable
+mdeno compile hello.ts
 ```
 
 ## Supported Platforms
