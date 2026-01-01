@@ -8,7 +8,7 @@ publish = false
 path = "lib.rs"
 
 [dependencies]
-libsui = { version = "0.12.2" }
+libsui = { version = "0.12.5" }
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader"] }
-serde_json = { version = "1.0.145" }
+serde_json = { version = "1.0.148" }
 utils = { path = "../utils" }
