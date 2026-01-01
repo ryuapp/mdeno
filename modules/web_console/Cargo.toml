@@ -8,5 +8,5 @@ publish = false
 path = "lib.rs"
 
 [dependencies]
-rquickjs = { version = "0.10.0", features = ["classes", "properties", "loader"] }
+rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader"] }
 utils = { path = "../utils" }

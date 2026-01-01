@@ -8,7 +8,7 @@ publish = false
 path = "lib.rs"
 
 [dependencies]
-rquickjs = { version = "0.10.0", features = ["classes", "properties", "loader"] }
+rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader"] }
 smol = { version = "2.0.2" }
 smol-hyper = { version = "0.1.1" }
 hyper = { version = "1.7.0", features = ["client", "http1", "http2"] }
