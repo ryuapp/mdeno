@@ -35,4 +35,4 @@ tempfile = "3.24.0"
 [features]
 default = ["deno_os"]
 deno_os = ["mdeno_runtime/deno_os"]
-vendored-openssl = ["mdeno_runtime/vendored-openssl"]
+rustls = ["mdeno_runtime/rustls"]

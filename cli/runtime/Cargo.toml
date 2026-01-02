@@ -18,18 +18,17 @@ console = ["dep:web_console"]
 navigator = ["dep:web_navigator"]
 url = ["dep:web_url"]
 encoding = ["dep:web_encoding"]
-fetch = ["dep:web_fetch", "web_fetch?/native-tls"]
-vendored-openssl = ["dep:openssl", "openssl?/vendored"]
+fetch = ["dep:web_fetch"]
+rustls = ["web_fetch?/rustls"]
 deno_fs = ["dep:deno_fs"]
 deno_os = ["dep:deno_os"]
 deno_ns = ["dep:deno_ns"]
 
 [dependencies]
-rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader"] }
-smol = { version = "2.0.2" }
+rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader", "futures"] }
+tokio = { version = "1.48.0", features = ["rt", "rt-multi-thread"] }
 utils = { path = "../../modules/utils" }
 libsui = { version = "0.12.5" }
-openssl = { version = "0.10.75", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 rkyv = "0.8.12"
 
