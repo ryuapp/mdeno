@@ -13,16 +13,10 @@ name = "mdenort"
 path = "src/main.rs"
 
 [features]
-default = ["console", "navigator", "url", "encoding", "fetch", "deno_fs", "deno_os", "deno_ns"]
-console = ["dep:web_console"]
-navigator = ["dep:web_navigator"]
-url = ["dep:web_url"]
-encoding = ["dep:web_encoding"]
-fetch = ["dep:web_fetch"]
-rustls = ["web_fetch?/rustls"]
-deno_fs = ["dep:deno_fs"]
-deno_os = ["dep:deno_os"]
-deno_ns = ["dep:deno_ns"]
+default = ["native-tls"]
+native-tls = ["web_fetch/native-tls"]
+native-tls-vendored = ["web_fetch/native-tls-vendored"]
+rustls = ["web_fetch/rustls"]
 
 [dependencies]
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader", "futures"] }
@@ -34,11 +28,11 @@ rkyv = "0.8.12"
 
 # Modules
 deno_common = { path = "../../modules/deno_common" }
-deno_fs = { path = "../../modules/deno_fs", optional = true }
-deno_ns = { path = "../../modules/deno_ns", optional = true }
-deno_os = { path = "../../modules/deno_os", optional = true }
-web_console = { path = "../../modules/web_console", optional = true }
-web_encoding = { path = "../../modules/web_encoding", optional = true }
-web_fetch = { path = "../../modules/web_fetch", optional = true, default-features = false }
-web_navigator = { path = "../../modules/web_navigator", optional = true }
-web_url = { path = "../../modules/web_url", optional = true }
+deno_fs = { path = "../../modules/deno_fs" }
+deno_ns = { path = "../../modules/deno_ns" }
+deno_os = { path = "../../modules/deno_os" }
+web_console = { path = "../../modules/web_console" }
+web_encoding = { path = "../../modules/web_encoding" }
+web_fetch = { path = "../../modules/web_fetch" }
+web_navigator = { path = "../../modules/web_navigator" }
+web_url = { path = "../../modules/web_url" }

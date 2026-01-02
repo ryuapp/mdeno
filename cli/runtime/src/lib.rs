@@ -7,7 +7,6 @@ pub mod module_builder;
 mod path_utils;
 
 /// Set script arguments for Deno.args
-#[cfg(feature = "deno_os")]
 pub fn set_script_args(args: Vec<String>) {
     deno_os::set_script_args(args);
 }
