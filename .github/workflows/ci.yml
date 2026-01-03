@@ -70,16 +70,16 @@ jobs:
         run: rustup target add ${{ matrix.target }}
       - name: Build
         if: ${{ !endsWith(matrix.target, '-musl') }}
-        run: deno task build --target ${{ matrix.target }}
+        run: deno task build --target ${{ matrix.target }} --features native-tls
       - name: Build (musl)
         if: endsWith(matrix.target, '-musl')
-        run: deno task build --target ${{ matrix.target }} --no-default-features --features rustls,native-tls-vendored
+        run: deno task build --target ${{ matrix.target }} --features rustls
       - name: Test
         if: ${{ !endsWith(matrix.target, '-musl') }}
-        run: deno task test --target ${{ matrix.target }}
+        run: deno task test --target ${{ matrix.target }} --features native-tls
       - name: Test (musl)
         if: endsWith(matrix.target, '-musl')
-        run: deno task test --target ${{ matrix.target }} --no-default-features --features rustls,native-tls-vendored
+        run: deno task test --target ${{ matrix.target }} --features rustls
 
       - name: Collect binary sizes
         run: |
