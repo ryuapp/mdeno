@@ -9,8 +9,8 @@ path = "lib.rs"
 
 [features]
 default = []
-native-tls = ["reqwest/native-tls"]
-rustls = ["reqwest/rustls"]
+native-tls = ["reqwest/native-tls", "reqwest/http2"]
+rustls = ["reqwest/rustls", "reqwest/http2"]
 
 [dependencies]
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader", "futures", "macro"] }
