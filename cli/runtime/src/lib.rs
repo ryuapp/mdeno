@@ -1,5 +1,5 @@
 // Copyright 2018-2025 the Deno authors. MIT license.
-use rquickjs::{CatchResultExt, CaughtError, Context, Module, Runtime};
+use rquickjs::{AsyncContext, AsyncRuntime, CatchResultExt, CaughtError, Module, async_with};
 use std::error::Error;
 use std::sync::Arc;
 
@@ -7,7 +7,6 @@ pub mod module_builder;
 mod path_utils;
 
 /// Set script arguments for Deno.args
-#[cfg(feature = "deno_os")]
 pub fn set_script_args(args: Vec<String>) {
     deno_os::set_script_args(args);
 }
@@ -19,22 +18,25 @@ pub fn run_js_code(js_code: &str) -> Result<(), Box<dyn Error>> {
 pub fn run_js_code_with_path(js_code: &str, file_path: &str) -> Result<(), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
 
-    smol::block_on(async {
-        let runtime = Runtime::new()?;
+    let tokio_runtime = tokio::runtime::Runtime::new()?;
+    tokio_runtime.block_on(async {
+        let runtime = AsyncRuntime::new()?;
 
         // Build module configuration
         let (_global_attachment, module_registry) = ModuleBuilder::default().build();
         let registry = Arc::new(module_registry);
 
         // Set module loader before creating context
-        runtime.set_loader(
-            module_builder::NodeResolver::new(registry.clone()),
-            module_builder::NodeLoader::new(registry.clone()),
-        );
+        runtime
+            .set_loader(
+                module_builder::NodeResolver::new(registry.clone()),
+                module_builder::NodeLoader::new(registry.clone()),
+            )
+            .await;
 
-        let context = Context::full(&runtime)?;
+        let context = AsyncContext::full(&runtime).await?;
 
-        context.with(|ctx| -> Result<(), Box<dyn Error>> {
+        async_with!(context => |ctx| {
             setup_extensions(&ctx)?;
 
             let result = {
@@ -46,11 +48,32 @@ pub fn run_js_code_with_path(js_code: &str, file_path: &str) -> Result<(), Box<d
                 std::process::exit(1);
             }
 
-            // Execute all pending jobs (promises, microtasks)
-            while ctx.execute_pending_job() {}
+            Ok::<_, Box<dyn Error>>(())
+        })
+        .await?;
 
-            Ok(())
-        })?;
+        // Execute all pending jobs (promises, microtasks)
+        loop {
+            runtime.idle().await;
+
+            let has_pending_job = async_with!(context => |ctx| {
+                let has_pending_job = ctx.execute_pending_job();
+
+                // Check for exceptions after each job execution
+                let exception_value = ctx.catch();
+                if let Some(exception) = exception_value.into_exception() {
+                    handle_error(CaughtError::Exception(exception));
+                    std::process::exit(1);
+                }
+
+                Ok::<_, Box<dyn Error>>(has_pending_job)
+            })
+            .await?;
+
+            if !has_pending_job {
+                break;
+            }
+        }
 
         Ok(())
     })
@@ -74,21 +97,24 @@ pub fn run_bytecode(bytecode: &[u8]) -> Result<(), Box<dyn Error>> {
 pub fn run_bytecode_bundle(bundle: BytecodeBundle) -> Result<(), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
 
-    smol::block_on(async {
-        let runtime = Runtime::new()?;
+    let tokio_runtime = tokio::runtime::Runtime::new()?;
+    tokio_runtime.block_on(async {
+        let runtime = AsyncRuntime::new()?;
 
         // Set up custom loader for bytecode map
         let (_global_attachment, module_registry) = ModuleBuilder::default().build();
         let registry = Arc::new(module_registry);
 
-        runtime.set_loader(
-            module_builder::BytecodeMapResolver::new(registry.clone(), bundle.modules.clone()),
-            module_builder::BytecodeMapLoader::new(registry.clone(), bundle.modules.clone()),
-        );
+        runtime
+            .set_loader(
+                module_builder::BytecodeMapResolver::new(registry.clone(), bundle.modules.clone()),
+                module_builder::BytecodeMapLoader::new(registry.clone(), bundle.modules.clone()),
+            )
+            .await;
 
-        let context = Context::full(&runtime)?;
+        let context = AsyncContext::full(&runtime).await?;
 
-        context.with(|ctx| -> Result<(), Box<dyn Error>> {
+        async_with!(context => |ctx| {
             setup_extensions(&ctx)?;
 
             // Use the specified entry point
@@ -124,18 +150,41 @@ pub fn run_bytecode_bundle(bundle: BytecodeBundle) -> Result<(), Box<dyn Error>>
             };
 
             // Evaluate the module
-            let result = module.eval().map(|(_module, _promise)| ());
+            let (_module, _promise) = module
+                .eval()
+                .catch(&ctx)
+                .map_err(|caught| {
+                    handle_error(caught);
+                    std::process::exit(1);
+                })
+                .unwrap();
 
-            if let Err(caught) = result.catch(&ctx) {
-                handle_error(caught);
-                std::process::exit(1);
+            Ok::<_, Box<dyn Error>>(())
+        })
+        .await?;
+
+        // Execute all pending jobs (promises, microtasks)
+        loop {
+            runtime.idle().await;
+
+            let has_pending_job = async_with!(context => |ctx| {
+                let has_pending_job = ctx.execute_pending_job();
+
+                // Check for exceptions after each job execution
+                let exception_value = ctx.catch();
+                if let Some(exception) = exception_value.into_exception() {
+                    handle_error(CaughtError::Exception(exception));
+                    std::process::exit(1);
+                }
+
+                Ok::<_, Box<dyn Error>>(has_pending_job)
+            })
+            .await?;
+
+            if !has_pending_job {
+                break;
             }
-
-            // Execute all pending jobs (promises, microtasks)
-            while ctx.execute_pending_job() {}
-
-            Ok(())
-        })?;
+        }
 
         Ok(())
     })
@@ -147,40 +196,66 @@ pub fn run_bytecode_with_loader(
 ) -> Result<(), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
 
-    smol::block_on(async {
-        let runtime = Runtime::new()?;
+    let tokio_runtime = tokio::runtime::Runtime::new()?;
+    tokio_runtime.block_on(async {
+        let runtime = AsyncRuntime::new()?;
 
         if enable_loader {
             let (_global_attachment, module_registry) = ModuleBuilder::default().build();
             let registry = Arc::new(module_registry);
 
-            runtime.set_loader(
-                module_builder::NodeResolver::new(registry.clone()),
-                module_builder::NodeLoader::new(registry.clone()),
-            );
+            runtime
+                .set_loader(
+                    module_builder::NodeResolver::new(registry.clone()),
+                    module_builder::NodeLoader::new(registry.clone()),
+                )
+                .await;
         }
 
-        let context = Context::full(&runtime)?;
+        let context = AsyncContext::full(&runtime).await?;
 
-        context.with(|ctx| -> Result<(), Box<dyn Error>> {
+        async_with!(context => |ctx| {
             setup_extensions(&ctx)?;
 
             // Load bytecode using Module::load
             let module = unsafe { Module::load(ctx.clone(), bytecode)? };
 
             // Evaluate the module
-            let result = module.eval().map(|(_module, _promise)| ());
+            let (_module, _promise) = module
+                .eval()
+                .catch(&ctx)
+                .map_err(|caught| {
+                    handle_error(caught);
+                    std::process::exit(1);
+                })
+                .unwrap();
 
-            if let Err(caught) = result.catch(&ctx) {
-                handle_error(caught);
-                std::process::exit(1);
+            Ok::<_, Box<dyn Error>>(())
+        })
+        .await?;
+
+        // Execute all pending jobs (promises, microtasks)
+        loop {
+            runtime.idle().await;
+
+            let has_pending_job = async_with!(context => |ctx| {
+                let has_pending_job = ctx.execute_pending_job();
+
+                // Check for exceptions after each job execution
+                let exception_value = ctx.catch();
+                if let Some(exception) = exception_value.into_exception() {
+                    handle_error(CaughtError::Exception(exception));
+                    std::process::exit(1);
+                }
+
+                Ok::<_, Box<dyn Error>>(has_pending_job)
+            })
+            .await?;
+
+            if !has_pending_job {
+                break;
             }
-
-            // Execute all pending jobs (promises, microtasks)
-            while ctx.execute_pending_job() {}
-
-            Ok(())
-        })?;
+        }
 
         Ok(())
     })
@@ -189,25 +264,29 @@ pub fn run_bytecode_with_loader(
 pub fn compile_js(js_code: &str, output_name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     use module_builder::ModuleBuilder;
 
-    smol::block_on(async {
-        let runtime = Runtime::new()?;
+    let tokio_runtime = tokio::runtime::Runtime::new()?;
+    tokio_runtime.block_on(async {
+        let runtime = AsyncRuntime::new()?;
 
         // Set up module loader for compile time
         let (_global_attachment, module_registry) = ModuleBuilder::default().build();
         let registry = Arc::new(module_registry);
 
-        runtime.set_loader(
-            module_builder::NodeResolver::new(registry.clone()),
-            module_builder::NodeLoader::new(registry.clone()),
-        );
+        runtime
+            .set_loader(
+                module_builder::NodeResolver::new(registry.clone()),
+                module_builder::NodeLoader::new(registry.clone()),
+            )
+            .await;
 
-        let ctx = Context::full(&runtime)?;
+        let ctx = AsyncContext::full(&runtime).await?;
 
-        ctx.with(|ctx| -> Result<Vec<u8>, Box<dyn Error>> {
+        async_with!(ctx => |ctx| {
             let module = Module::declare(ctx.clone(), output_name.to_string(), js_code)?;
             let bc = module.write(rquickjs::module::WriteOptions::default())?;
-            Ok(bc)
+            Ok::<_, Box<dyn Error>>(bc)
         })
+        .await
     })
 }
 
@@ -218,56 +297,59 @@ pub fn compile_modules(
     use module_builder::ModuleBuilder;
     use std::collections::HashMap;
 
-    smol::block_on(async {
-        let runtime = Runtime::new()?;
+    let tokio_runtime = tokio::runtime::Runtime::new()?;
+    tokio_runtime.block_on(async {
+        let runtime = AsyncRuntime::new()?;
 
         // Set up module loader with source map for compile time
         let (_global_attachment, module_registry) = ModuleBuilder::default().build();
         let registry = Arc::new(module_registry);
 
-        runtime.set_loader(
-            module_builder::SourceMapResolver::new(registry.clone(), modules.clone()),
-            module_builder::SourceMapLoader::new(registry.clone(), modules.clone()),
-        );
+        runtime
+            .set_loader(
+                module_builder::SourceMapResolver::new(registry.clone(), modules.clone()),
+                module_builder::SourceMapLoader::new(registry.clone(), modules.clone()),
+            )
+            .await;
 
-        let ctx = Context::full(&runtime)?;
+        let ctx = AsyncContext::full(&runtime).await?;
 
         let mut bytecode_map: HashMap<String, Vec<u8>> = HashMap::new();
 
         for (path, source) in &modules {
-            let bc = ctx
-                .with(|ctx| -> Result<Vec<u8>, Box<dyn Error>> {
-                    let module = Module::declare(ctx.clone(), path.clone(), source.clone())
-                        .catch(&ctx)
-                        .map_err(|e| {
-                            let mut error_msg = format!("Failed to declare module {}: ", path);
-                            match e {
-                                rquickjs::CaughtError::Exception(ex) => {
-                                    if let Some(msg) = ex.message() {
-                                        error_msg.push_str(&msg);
-                                    } else {
-                                        error_msg.push_str("Unknown exception");
-                                    }
-                                    if let Some(stack) = ex.stack() {
-                                        error_msg.push_str("\nStack: ");
-                                        error_msg.push_str(&stack);
-                                    }
+            let bc = async_with!(ctx => |ctx| {
+                let module = Module::declare(ctx.clone(), path.clone(), source.clone())
+                    .catch(&ctx)
+                    .map_err(|e| {
+                        let mut error_msg = format!("Failed to declare module {}: ", path);
+                        match e {
+                            rquickjs::CaughtError::Exception(ex) => {
+                                if let Some(msg) = ex.message() {
+                                    error_msg.push_str(&msg);
+                                } else {
+                                    error_msg.push_str("Unknown exception");
                                 }
-                                rquickjs::CaughtError::Error(err) => {
-                                    error_msg.push_str(&format!("{:?}", err));
-                                }
-                                _ => {
-                                    error_msg.push_str(&format!("{:?}", e));
+                                if let Some(stack) = ex.stack() {
+                                    error_msg.push_str("\nStack: ");
+                                    error_msg.push_str(&stack);
                                 }
                             }
-                            error_msg
-                        })?;
-                    let bc = module
-                        .write(rquickjs::module::WriteOptions::default())
-                        .map_err(|e| format!("Failed to write bytecode for {}: {:?}", path, e))?;
-                    Ok(bc)
-                })
-                .map_err(|e| format!("Error compiling {}: {}", path, e))?;
+                            rquickjs::CaughtError::Error(err) => {
+                                error_msg.push_str(&format!("{:?}", err));
+                            }
+                            _ => {
+                                error_msg.push_str(&format!("{:?}", e));
+                            }
+                        }
+                        error_msg
+                    })?;
+                let bc = module
+                    .write(rquickjs::module::WriteOptions::default())
+                    .map_err(|e| format!("Failed to write bytecode for {}: {:?}", path, e))?;
+                Ok::<_, Box<dyn Error>>(bc)
+            })
+            .await
+            .map_err(|e| format!("Error compiling {}: {}", path, e))?;
 
             bytecode_map.insert(path.clone(), bc);
         }

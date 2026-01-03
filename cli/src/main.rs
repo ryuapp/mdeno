@@ -89,7 +89,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli_args = parse_cli_args_from_vec(std::env::args().collect())?;
 
     // Set script arguments for Deno.args
-    #[cfg(feature = "deno_os")]
     mdeno_runtime::set_script_args(cli_args.script_args);
 
     // Convert file path to absolute path

@@ -49,44 +49,20 @@ impl Default for ModuleBuilder {
         // Initialize deno_common first
         builder = builder.with_global(deno_common::init);
 
-        #[cfg(feature = "console")]
-        {
-            builder = builder.with_global(web_console::init);
-        }
-        #[cfg(feature = "url")]
-        {
-            builder = builder.with_global(web_url::init);
-        }
-        #[cfg(feature = "encoding")]
-        {
-            builder = builder.with_global(web_encoding::init);
-        }
-        #[cfg(feature = "fetch")]
-        {
-            builder = builder.with_global(web_fetch::init);
-        }
+        builder = builder.with_global(web_console::init);
+        builder = builder.with_global(web_url::init);
+        builder = builder.with_global(web_encoding::init);
+        builder = builder.with_global(web_fetch::init);
 
         // Initialize navigator after other modules
-        #[cfg(feature = "navigator")]
-        {
-            builder = builder.with_global(web_navigator::init);
-        }
+        builder = builder.with_global(web_navigator::init);
 
         // Initialize file system and OS modules
-        #[cfg(feature = "deno_fs")]
-        {
-            builder = builder.with_global(deno_fs::init);
-        }
-        #[cfg(feature = "deno_os")]
-        {
-            builder = builder.with_global(deno_os::init);
-        }
+        builder = builder.with_global(deno_fs::init);
+        builder = builder.with_global(deno_os::init);
 
         // Initialize Deno namespace (depends on deno_fs and deno_os)
-        #[cfg(feature = "deno_ns")]
-        {
-            builder = builder.with_global(deno_ns::init);
-        }
+        builder = builder.with_global(deno_ns::init);
 
         builder
     }
