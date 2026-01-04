@@ -13,21 +13,23 @@ name = "mdeno"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.100"
-clap_lex = "0.7.6"
-libsui = "0.12.5"
+anyhow = "=1.0.100"
+clap_lex = "=0.7.6"
+deno_terminal = "=0.2.3"
+libsui = "=0.12.5"
+mdeno_path_util = { path = "../modules/mdeno_path_util" }
 mdeno_runtime = { path = "runtime" }
 utils = { path = "../modules/utils" }
-oxc_allocator = "0.106"
-oxc_ast = "0.106"
-oxc_codegen = "0.106"
-oxc_parser = "0.106"
-oxc_semantic = "0.106"
-oxc_span = "0.106"
-oxc_transformer = "0.106"
-ureq = { version = "3.1.4", default-features = false, features = ["gzip", "json"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.148"
+oxc_allocator = "=0.106.0"
+oxc_ast = "=0.106.0"
+oxc_codegen = "=0.106.0"
+oxc_parser = "=0.106.0"
+oxc_semantic = "=0.106.0"
+oxc_span = "=0.106.0"
+oxc_transformer = "=0.106.0"
+ureq = { version = "=3.1.4", default-features = false, features = ["gzip", "json"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.148"
 
 [dev-dependencies]
 tempfile = "3.24.0"

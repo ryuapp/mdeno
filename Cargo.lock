@@ -430,6 +430,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "deno_terminal"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3ba8041ae7319b3ca6a64c399df4112badcbbe0868b4517637647614bede4be"
+dependencies = [
+ "once_cell",
+ "termcolor",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1119,7 +1129,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap_lex",
+ "deno_terminal",
  "libsui",
+ "mdeno_path_util",
  "mdeno_runtime",
  "oxc_allocator",
  "oxc_ast",
@@ -1134,6 +1146,10 @@ dependencies = [
  "ureq",
  "utils",
 ]
+
+[[package]]
+name = "mdeno_path_util"
+version = "0.1.0"
 
 [[package]]
 name = "mdeno_runtime"
@@ -2504,6 +2520,15 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "termcolor"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
+dependencies = [
+ "winapi-util",
 ]
 
 [[package]]

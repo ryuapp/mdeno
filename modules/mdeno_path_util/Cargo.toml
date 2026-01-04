@@ -1,0 +1,8 @@
+[package]
+name = "mdeno_path_util"
+description = "Path utilities used in mdeno"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
