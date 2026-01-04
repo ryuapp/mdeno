@@ -1,9 +1,9 @@
-mod url;
 mod search_params;
+mod url;
 
 use rquickjs::{Class, Ctx};
-use url::Url;
 use search_params::UrlSearchParams;
+use url::Url;
 
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     // Register URLSearchParams class
