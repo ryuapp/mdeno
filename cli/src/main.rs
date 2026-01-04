@@ -5,8 +5,8 @@ use std::fs;
 use utils::SECTION_NAME;
 
 pub mod bundler;
+pub mod filepath;
 pub mod jsr;
-mod path_utils;
 mod strip_types;
 
 #[derive(Debug, PartialEq)]
@@ -106,7 +106,14 @@ fn parse_cli_args_from_vec(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>>
     })
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn Error>> {
     // Check if this executable has embedded bytecode
     if let Ok(Some(bytecode)) = extract_embedded_bytecode() {
         // Standalone binary: args are retrieved directly in deno_os module
@@ -129,7 +136,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             // Get file path
             let file_path = cli_args.file_path.ok_or("File path is required")?;
 
-            // Convert file path to absolute path
+            // Convert file path to absolute canonical path
             let file_path_buf = std::path::Path::new(&file_path);
             let absolute_file_path = if file_path_buf.is_absolute() {
                 file_path_buf.to_path_buf()
@@ -137,33 +144,39 @@ fn main() -> Result<(), Box<dyn Error>> {
                 std::env::current_dir()?.join(file_path_buf)
             };
 
-            // Convert to native path separator
-            let absolute_file_path_str = absolute_file_path
-                .components()
-                .collect::<std::path::PathBuf>()
-                .display()
-                .to_string();
+            // Check if file exists
+            if !absolute_file_path.exists() {
+                // Convert to file:// URL for error message (like Deno)
+                let file_url = filepath::to_file_url(&absolute_file_path);
+                return Err(format!("Module not found \"{}\"", file_url).into());
+            }
+
+            // Canonicalize the path (resolve symlinks, normalize ..)
+            let canonical_file_path = fs::canonicalize(&absolute_file_path)?;
+            let canonical_file_path_str = canonical_file_path.display().to_string();
 
             // Use bundler to collect all modules (both for run and compile)
             let mut bundler = bundler::ModuleBundler::new(cli_args.unstable);
-            let modules = bundler.bundle(&absolute_file_path_str)?;
+            let modules = bundler.bundle(&canonical_file_path_str)?;
+
+            // Get entry point as file:// URL for module compilation
+            let entry_file_url = filepath::to_file_url(&canonical_file_path);
 
             match cli_args.command {
                 Command::Compile => {
-                    let output_name = absolute_file_path
+                    let output_name = canonical_file_path
                         .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("output");
 
                     println!("Bundling {} modules...", modules.len());
 
-                    compile_modules_to_binary(&modules, &absolute_file_path_str, output_name)?;
+                    compile_modules_to_binary(&modules, &entry_file_url, output_name)?;
                     println!("Compiled {} to {}", file_path, output_name);
                 }
                 Command::Run => {
                     // Run mode: compile to bytecode and execute
-                    let bytecode =
-                        mdeno_runtime::compile_modules(modules, absolute_file_path_str.clone())?;
+                    let bytecode = mdeno_runtime::compile_modules(modules, entry_file_url)?;
                     mdeno_runtime::run_bytecode(&bytecode)?;
                 }
                 _ => unreachable!(),

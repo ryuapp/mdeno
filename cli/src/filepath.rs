@@ -1,6 +1,32 @@
 use std::path::Path;
 
 /// Convert a file path to a file:// URL
+///
+/// # Examples
+///
+/// On Windows:
+/// ```
+/// # use std::path::PathBuf;
+/// # use mdeno::filepath::to_file_url;
+/// # #[cfg(windows)]
+/// # {
+/// let path = PathBuf::from(r"C:\Users\test\file.js");
+/// let url = to_file_url(&path);
+/// assert_eq!(url, "file:///C:/Users/test/file.js");
+/// # }
+/// ```
+///
+/// On Unix:
+/// ```
+/// # use std::path::PathBuf;
+/// # use mdeno::filepath::to_file_url;
+/// # #[cfg(unix)]
+/// # {
+/// let path = PathBuf::from("/home/user/file.js");
+/// let url = to_file_url(&path);
+/// assert_eq!(url, "file:///home/user/file.js");
+/// # }
+/// ```
 pub fn to_file_url(path: &Path) -> String {
     // Convert Windows backslashes to forward slashes
     let path_str = path.display().to_string().replace('\\', "/");

@@ -1,4 +1,4 @@
-use crate::path_utils::normalize_path;
+use crate::path_utils::to_file_url;
 use rquickjs::loader::{Loader, Resolver};
 use rquickjs::{Ctx, Error, Module, Result};
 use std::collections::HashMap;
@@ -232,7 +232,7 @@ impl Resolver for BytecodeMapResolver {
 
                 // Try with canonical path
                 if let Ok(canonical) = resolved.canonicalize() {
-                    let canonical_str = normalize_path(&canonical);
+                    let canonical_str = to_file_url(&canonical);
                     if self.bytecode_map.contains_key(&canonical_str) {
                         return Ok(canonical_str);
                     }
@@ -388,7 +388,7 @@ impl Resolver for SourceMapResolver {
 
                 // Try with canonical path
                 if let Ok(canonical) = resolved.canonicalize() {
-                    let canonical_str = normalize_path(&canonical);
+                    let canonical_str = to_file_url(&canonical);
                     if self.source_map.contains_key(&canonical_str) {
                         return Ok(canonical_str);
                     }
