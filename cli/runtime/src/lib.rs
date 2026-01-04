@@ -11,6 +11,11 @@ pub fn set_script_args(args: Vec<String>) {
     deno_os::set_script_args(args);
 }
 
+/// Evaluate JavaScript code directly (for eval command)
+pub fn eval_code(js_code: &str) -> Result<(), Box<dyn Error>> {
+    run_js_code_with_path(js_code, "./$mdeno$eval.js")
+}
+
 pub fn run_js_code(js_code: &str) -> Result<(), Box<dyn Error>> {
     run_js_code_with_path(js_code, "./$mdeno$eval.js")
 }

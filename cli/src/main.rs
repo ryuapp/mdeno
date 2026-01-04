@@ -12,7 +12,8 @@ mod strip_types;
 #[derive(Debug, PartialEq)]
 struct CliArgs {
     command: Command,
-    file_path: String,
+    file_path: Option<String>,
+    code: Option<String>,
     script_args: Vec<String>,
     unstable: bool,
 }
@@ -21,6 +22,7 @@ struct CliArgs {
 enum Command {
     Run,
     Compile,
+    Eval,
 }
 
 fn parse_cli_args_from_vec(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
@@ -30,6 +32,7 @@ fn parse_cli_args_from_vec(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>>
     raw.next(&mut cursor); // skip program name
 
     let mut file_path: Option<String> = None;
+    let mut code: Option<String> = None;
     let mut command = Command::Run;
     let mut unstable = false;
 
@@ -46,6 +49,16 @@ fn parse_cli_args_from_vec(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>>
                 "run" => {
                     command = Command::Run;
                 }
+                "eval" => {
+                    command = Command::Eval;
+                    // Next argument should be the code
+                    if let Some(code_arg) = raw.next(&mut cursor) {
+                        if let Ok(code_value) = code_arg.to_value() {
+                            code = Some(code_value.to_string());
+                        }
+                    }
+                    break;
+                }
                 _ if !value.starts_with('-') => {
                     // Found file path
                     file_path = Some(value.to_string());
@@ -56,23 +69,38 @@ fn parse_cli_args_from_vec(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>>
         }
     }
 
-    let file_path = file_path.ok_or("JavaScript file is required")?;
+    // Validate arguments based on command
+    match command {
+        Command::Eval => {
+            if code.is_none() {
+                return Err("Code string is required for eval command".into());
+            }
+        }
+        _ => {
+            if file_path.is_none() {
+                return Err("JavaScript file is required".into());
+            }
+        }
+    }
 
-    // Find script arguments (everything after the file path)
-    let mut found_file = false;
+    // Find script arguments (everything after the file path or code)
+    let mut found_target = false;
     let mut script_args = Vec::new();
 
+    let target = file_path.as_ref().or(code.as_ref());
+
     for arg in args_clone.iter() {
-        if found_file {
+        if found_target {
             script_args.push(arg.to_string());
-        } else if arg == &file_path {
-            found_file = true;
+        } else if Some(arg) == target {
+            found_target = true;
         }
     }
 
     Ok(CliArgs {
         command,
         file_path,
+        code,
         script_args,
         unstable,
     })
@@ -91,41 +119,55 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Set script arguments for Deno.args
     mdeno_runtime::set_script_args(cli_args.script_args);
 
-    // Convert file path to absolute path
-    let file_path_buf = std::path::Path::new(&cli_args.file_path);
-    let absolute_file_path = if file_path_buf.is_absolute() {
-        file_path_buf.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(file_path_buf)
-    };
-
-    // Convert to native path separator
-    let absolute_file_path_str = absolute_file_path
-        .components()
-        .collect::<std::path::PathBuf>()
-        .display()
-        .to_string();
-
-    // Use bundler to collect all modules (both for run and compile)
-    let mut bundler = bundler::ModuleBundler::new(cli_args.unstable);
-    let modules = bundler.bundle(&absolute_file_path_str)?;
-
     match cli_args.command {
-        Command::Compile => {
-            let output_name = absolute_file_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("output");
-
-            println!("Bundling {} modules...", modules.len());
-
-            compile_modules_to_binary(&modules, &absolute_file_path_str, output_name)?;
-            println!("Compiled {} to {}", cli_args.file_path, output_name);
+        Command::Eval => {
+            // Eval mode: execute code directly
+            let code = cli_args.code.ok_or("Code is required for eval command")?;
+            mdeno_runtime::eval_code(&code)?;
         }
-        Command::Run => {
-            // Run mode: compile to bytecode and execute
-            let bytecode = mdeno_runtime::compile_modules(modules, absolute_file_path_str.clone())?;
-            mdeno_runtime::run_bytecode(&bytecode)?;
+        Command::Run | Command::Compile => {
+            // Get file path
+            let file_path = cli_args.file_path.ok_or("File path is required")?;
+
+            // Convert file path to absolute path
+            let file_path_buf = std::path::Path::new(&file_path);
+            let absolute_file_path = if file_path_buf.is_absolute() {
+                file_path_buf.to_path_buf()
+            } else {
+                std::env::current_dir()?.join(file_path_buf)
+            };
+
+            // Convert to native path separator
+            let absolute_file_path_str = absolute_file_path
+                .components()
+                .collect::<std::path::PathBuf>()
+                .display()
+                .to_string();
+
+            // Use bundler to collect all modules (both for run and compile)
+            let mut bundler = bundler::ModuleBundler::new(cli_args.unstable);
+            let modules = bundler.bundle(&absolute_file_path_str)?;
+
+            match cli_args.command {
+                Command::Compile => {
+                    let output_name = absolute_file_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("output");
+
+                    println!("Bundling {} modules...", modules.len());
+
+                    compile_modules_to_binary(&modules, &absolute_file_path_str, output_name)?;
+                    println!("Compiled {} to {}", file_path, output_name);
+                }
+                Command::Run => {
+                    // Run mode: compile to bytecode and execute
+                    let bytecode =
+                        mdeno_runtime::compile_modules(modules, absolute_file_path_str.clone())?;
+                    mdeno_runtime::run_bytecode(&bytecode)?;
+                }
+                _ => unreachable!(),
+            }
         }
     }
 
