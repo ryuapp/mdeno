@@ -1,5 +1,5 @@
+use crate::filepath::to_file_url;
 use crate::jsr::JsrResolver;
-use crate::path_utils::normalize_path;
 use crate::strip_types::transform;
 use oxc_allocator::Allocator;
 use oxc_ast::ast::*;
@@ -32,16 +32,16 @@ impl ModuleBundler {
     }
 
     pub fn bundle(&mut self, entry_path: &str) -> Result<HashMap<String, String>, Box<dyn Error>> {
-        let abs_entry = fs::canonicalize(entry_path)?;
-        let abs_entry_str = normalize_path(&abs_entry);
-
-        self.process_module(&abs_entry_str)?;
+        // entry_path should already be an absolute canonical path
+        self.process_module(entry_path)?;
 
         Ok(self.modules.clone())
     }
 
     fn process_module(&mut self, module_path: &str) -> Result<(), Box<dyn Error>> {
-        return self.process_module_with_key(module_path, module_path);
+        // Convert file path to file:// URL for map key
+        let file_url = to_file_url(Path::new(module_path));
+        return self.process_module_with_key(module_path, &file_url);
     }
 
     fn process_module_with_key(
@@ -79,8 +79,8 @@ impl ModuleBundler {
 
                 // Try to resolve file
                 if let Ok(canonical) = resolved.canonicalize() {
-                    let normalized = normalize_path(&canonical);
-                    self.process_module(&normalized)?;
+                    let canonical_str = canonical.display().to_string();
+                    self.process_module(&canonical_str)?;
                 }
             } else if import_path.starts_with("jsr:") {
                 if !self.unstable {
@@ -96,10 +96,13 @@ impl ModuleBundler {
 
                 // Add all resolved JSR modules to the bundle
                 for (jsr_spec, cache_path) in resolved_modules {
-                    let cache_path_str = normalize_path(&cache_path);
                     if !self.visited.contains(&jsr_spec) {
                         let source = std::fs::read_to_string(&cache_path).map_err(|e| {
-                            format!("Failed to read cached JSR file {}: {}", cache_path_str, e)
+                            format!(
+                                "Failed to read cached JSR file {}: {}",
+                                cache_path.display(),
+                                e
+                            )
                         })?;
                         self.modules.insert(jsr_spec.clone(), source.clone());
                         self.visited.insert(jsr_spec.clone());
