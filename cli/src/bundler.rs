@@ -1,6 +1,6 @@
-use crate::filepath::to_file_url;
 use crate::jsr::JsrResolver;
 use crate::strip_types::transform;
+use mdeno_path_util::to_file_url;
 use oxc_allocator::Allocator;
 use oxc_ast::ast::*;
 use oxc_parser::Parser;

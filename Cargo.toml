@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["modules/web_console", "modules/web_encoding", "modules/web_fetch", "modules/deno_common", "modules/deno_fs", "modules/deno_ns", "modules/deno_os", "modules/web_navigator", "modules/node_process", "modules/web_url", "modules/utils",
+members = ["modules/web_console", "modules/web_encoding", "modules/web_fetch", "modules/deno_common", "modules/deno_fs", "modules/deno_ns", "modules/deno_os", "modules/web_navigator", "modules/node_process", "modules/web_url", "modules/utils", "modules/mdeno_path_util",
     "cli/runtime",
     "cli",
 ]

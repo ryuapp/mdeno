@@ -1,4 +1,3 @@
-// Copyright 2018-2025 the Deno authors. MIT license.
 // Runtime-only binary for standalone executables
 use std::error::Error;
 use utils::SECTION_NAME;
