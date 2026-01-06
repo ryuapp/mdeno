@@ -1166,6 +1166,7 @@ dependencies = [
  "tokio",
  "utils",
  "web_console",
+ "web_crypto",
  "web_encoding",
  "web_fetch",
  "web_navigator",
@@ -3051,6 +3052,14 @@ version = "0.1.0"
 dependencies = [
  "rquickjs",
  "utils",
+]
+
+[[package]]
+name = "web_crypto"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "rquickjs",
 ]
 
 [[package]]

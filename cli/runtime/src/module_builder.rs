@@ -50,6 +50,7 @@ impl Default for ModuleBuilder {
         builder = builder.with_global(deno_common::init);
 
         builder = builder.with_global(web_console::init);
+        builder = builder.with_global(web_crypto::init);
         builder = builder.with_global(web_url::init);
         builder = builder.with_global(web_encoding::init);
         builder = builder.with_global(web_fetch::init);
