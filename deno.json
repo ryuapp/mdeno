@@ -4,6 +4,7 @@
     "proseWrap": "preserve"
   },
   "tasks": {
+    "eval": "cargo run --release --bin mdeno -- eval",
     "run": "cargo run --release --bin mdeno",
     "run:example": "cargo run --release --bin mdeno -- run cli/example.ts",
     "build": "cargo build --release --bins",
