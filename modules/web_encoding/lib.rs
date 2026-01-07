@@ -35,17 +35,6 @@ fn setup_internal(ctx: &Ctx) -> std::result::Result<(), Box<dyn Error>> {
         }
     });
 
-    // TextDecoder.decode: UTF-8 bytes to String (for backward compatibility)
-    add_internal_function!(ctx, "encoding.decode", |bytes_json: String| -> String {
-        match serde_json::from_str::<Vec<u8>>(&bytes_json) {
-            Ok(bytes) => match String::from_utf8(bytes) {
-                Ok(s) => s,
-                Err(e) => format!("ERROR: Invalid UTF-8 sequence: {}", e),
-            },
-            Err(e) => format!("ERROR: Invalid bytes array: {}", e),
-        }
-    });
-
     Ok(())
 }
 
