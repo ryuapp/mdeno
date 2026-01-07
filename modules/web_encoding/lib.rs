@@ -1,15 +1,17 @@
-use rquickjs::{Ctx, Module};
+mod text_encoder;
+
+use rquickjs::{Ctx, Result};
 use std::error::Error;
+use text_encoder::TextEncoder;
 use utils::add_internal_function;
 
-pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
+pub fn init(ctx: &Ctx<'_>) -> Result<()> {
     setup_internal(ctx).map_err(|_| rquickjs::Error::Unknown)?;
-    let module = Module::evaluate(ctx.clone(), "web_encoding", include_str!("encoding.js"))?;
-    module.finish::<()>()?;
+    setup_text_encoder(ctx)?;
     Ok(())
 }
 
-fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn Error>> {
+fn setup_internal(ctx: &Ctx) -> std::result::Result<(), Box<dyn Error>> {
     ctx.eval::<(), _>("globalThis[Symbol.for('mdeno.internal')].encoding = {};")?;
 
     // btoa: Binary to ASCII (Base64 encode)
@@ -30,13 +32,7 @@ fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // TextEncoder.encode: String to UTF-8 bytes (as array)
-    add_internal_function!(ctx, "encoding.encode", |text: String| -> String {
-        let bytes = text.into_bytes();
-        serde_json::to_string(&bytes).unwrap()
-    });
-
-    // TextDecoder.decode: UTF-8 bytes to String
+    // TextDecoder.decode: UTF-8 bytes to String (for backward compatibility)
     add_internal_function!(ctx, "encoding.decode", |bytes_json: String| -> String {
         match serde_json::from_str::<Vec<u8>>(&bytes_json) {
             Ok(bytes) => match String::from_utf8(bytes) {
@@ -46,6 +42,19 @@ fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn Error>> {
             Err(e) => format!("ERROR: Invalid bytes array: {}", e),
         }
     });
+
+    Ok(())
+}
+
+fn setup_text_encoder(ctx: &Ctx<'_>) -> Result<()> {
+    let globals = ctx.globals();
+
+    // Register TextEncoder class
+    rquickjs::Class::<TextEncoder>::define(&globals)?;
+
+    // Set TextEncoder as a global constructor
+    let text_encoder_class = globals.get::<_, rquickjs::Function>("TextEncoder")?;
+    globals.set("TextEncoder", text_encoder_class)?;
 
     Ok(())
 }
