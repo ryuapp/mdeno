@@ -1,13 +1,16 @@
+mod text_decoder;
 mod text_encoder;
 
 use rquickjs::{Ctx, Result};
 use std::error::Error;
+use text_decoder::TextDecoder;
 use text_encoder::TextEncoder;
 use utils::add_internal_function;
 
 pub fn init(ctx: &Ctx<'_>) -> Result<()> {
     setup_internal(ctx).map_err(|_| rquickjs::Error::Unknown)?;
     setup_text_encoder(ctx)?;
+    setup_text_decoder(ctx)?;
     Ok(())
 }
 
@@ -55,6 +58,19 @@ fn setup_text_encoder(ctx: &Ctx<'_>) -> Result<()> {
     // Set TextEncoder as a global constructor
     let text_encoder_class = globals.get::<_, rquickjs::Function>("TextEncoder")?;
     globals.set("TextEncoder", text_encoder_class)?;
+
+    Ok(())
+}
+
+fn setup_text_decoder(ctx: &Ctx<'_>) -> Result<()> {
+    let globals = ctx.globals();
+
+    // Register TextDecoder class
+    rquickjs::Class::<TextDecoder>::define(&globals)?;
+
+    // Set TextDecoder as a global constructor
+    let text_decoder_class = globals.get::<_, rquickjs::Function>("TextDecoder")?;
+    globals.set("TextDecoder", text_decoder_class)?;
 
     Ok(())
 }
