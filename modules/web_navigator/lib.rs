@@ -8,6 +8,15 @@ pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     Ok(())
 }
 
+fn get_system_locale() -> String {
+    sys_locale::get_locale()
+        .map(|locale| {
+            // Convert locale format (e.g., "ja_JP" or "en_US") to BCP 47 format (e.g., "ja-JP" or "en-US")
+            locale.replace('_', "-")
+        })
+        .unwrap_or_else(|| "en-US".to_string())
+}
+
 fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn Error>> {
     let platform = if cfg!(target_os = "macos") {
         "MacIntel"
@@ -25,9 +34,16 @@ fn setup_internal(ctx: &Ctx) -> Result<(), Box<dyn Error>> {
         return Ok(());
     };
 
+    let language = get_system_locale();
+
     ctx.eval::<(), _>(format!(
         "globalThis[Symbol.for('mdeno.internal')].platform = '{}';",
         platform
+    ))?;
+
+    ctx.eval::<(), _>(format!(
+        "globalThis[Symbol.for('mdeno.internal')].language = '{}';",
+        language
     ))?;
 
     Ok(())
