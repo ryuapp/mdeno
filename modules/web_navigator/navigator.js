@@ -4,6 +4,8 @@ class Navigator {
   constructor() {
     this.userAgent = "mdeno";
     this.platform = __internal.platform;
+    this.language = __internal.language;
+    this.languages = [__internal.language];
   }
 }
 
