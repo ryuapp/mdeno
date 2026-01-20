@@ -6,6 +6,7 @@ pub struct CliArgs {
     pub command: Command,
     pub file_path: Option<String>,
     pub code: Option<String>,
+    pub test_pattern: Option<String>,
     pub script_args: Vec<String>,
     pub unstable: bool,
 }
@@ -15,6 +16,7 @@ pub enum Command {
     Run,
     Compile,
     Eval,
+    Test,
 }
 
 pub fn parse_args(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
@@ -25,6 +27,7 @@ pub fn parse_args(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
 
     let mut file_path: Option<String> = None;
     let mut code: Option<String> = None;
+    let mut test_pattern: Option<String> = None;
     let mut command = Command::Run;
     let mut unstable = false;
 
@@ -51,10 +54,18 @@ pub fn parse_args(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
                     }
                     break;
                 }
+                "test" => {
+                    command = Command::Test;
+                    // Continue parsing for test pattern and other flags
+                }
                 _ if !value.starts_with('-') => {
-                    // Found file path
-                    file_path = Some(value.to_string());
-                    break;
+                    // Found file path or test pattern
+                    if command == Command::Test {
+                        test_pattern = Some(value.to_string());
+                    } else {
+                        file_path = Some(value.to_string());
+                        break;
+                    }
                 }
                 _ => {}
             }
@@ -68,16 +79,20 @@ pub fn parse_args(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
                 return Err("Code string is required for eval command".into());
             }
         }
+        Command::Test => {
+            // Test pattern is optional, defaults to current directory
+        }
         _ => {
             if file_path.is_none() {
                 println!(
                     "mdeno is a minimal JavaScript runtime for CLI tools.\n\n\
                     USAGE:\n  \
-                      mdeno run <file>      Run a JavaScript or TypeScript file\n  \
-                      mdeno eval <code>     Evaluate a script from the command line\n  \
-                      mdeno compile <file>  Compile the script into a self contained executable\n\n\
+                      mdeno run <file>       Run a JavaScript or TypeScript file\n  \
+                      mdeno eval <code>      Evaluate a script from the command line\n  \
+                      mdeno compile <file>   Compile the script into a self contained executable\n  \
+                      mdeno test [pattern]   Run tests\n\n\
                     OPTIONS:\n  \
-                      --unstable            Enable unstable features"
+                      --unstable             Enable unstable features"
                 );
                 std::process::exit(1);
             }
@@ -102,6 +117,7 @@ pub fn parse_args(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
         command,
         file_path,
         code,
+        test_pattern,
         script_args,
         unstable,
     })

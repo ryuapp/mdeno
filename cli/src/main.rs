@@ -42,6 +42,9 @@ fn run() -> Result<(), Box<dyn Error>> {
             let file_path = cli_args.file_path.ok_or("File path is required")?;
             commands::compile::execute(&file_path, cli_args.unstable)?;
         }
+        flag::Command::Test => {
+            commands::test::execute(cli_args.test_pattern, cli_args.unstable)?;
+        }
     }
 
     Ok(())

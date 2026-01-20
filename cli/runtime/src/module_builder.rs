@@ -65,6 +65,9 @@ impl Default for ModuleBuilder {
         // Initialize Deno namespace (depends on deno_fs and deno_os)
         builder = builder.with_global(deno_ns::init);
 
+        // Initialize test runner (after deno_ns so it can add to the Deno object)
+        builder = builder.with_global(deno_test::init);
+
         builder
     }
 }

@@ -10,7 +10,9 @@
     "build": "cargo build --release --bins",
     "build:mdenort": "cargo build --release --bin mdenort",
     "build:mdeno": "cargo build --release --bin mdeno",
-    "test": "cargo test --release",
+    "test": "deno task test:rs && deno task test:js",
+    "test:rs": "cargo test --release",
+    "test:js": "cargo run --release --bin mdeno -- test .",
     "format": "deno fmt && deno lint --fix && cargo fmt",
     "check:format": "deno fmt --check && deno lint && cargo fmt --check",
     "compile:example": {

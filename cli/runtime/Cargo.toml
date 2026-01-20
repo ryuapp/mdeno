@@ -30,6 +30,7 @@ deno_common = { path = "../../modules/deno_common" }
 deno_fs = { path = "../../modules/deno_fs" }
 deno_ns = { path = "../../modules/deno_ns" }
 deno_os = { path = "../../modules/deno_os" }
+deno_test = { path = "../../modules/deno_test" }
 web_console = { path = "../../modules/web_console" }
 web_crypto = { path = "../../modules/web_crypto" }
 web_encoding = { path = "../../modules/web_encoding" }

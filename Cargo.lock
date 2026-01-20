@@ -440,6 +440,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "deno_test"
+version = "0.1.0"
+dependencies = [
+ "deno_terminal",
+ "rquickjs",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1159,6 +1167,7 @@ dependencies = [
  "deno_fs",
  "deno_ns",
  "deno_os",
+ "deno_test",
  "libsui",
  "rkyv",
  "rquickjs",
