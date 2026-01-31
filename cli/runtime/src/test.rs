@@ -23,8 +23,8 @@ fn get_test_context(ctx: &rquickjs::Ctx<'_>) -> Result<TestContext, Box<dyn Erro
 pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
 
-    let tokio_runtime = tokio::runtime::Runtime::new()?;
-    tokio_runtime.block_on(async {
+    let compio_runtime = compio_runtime::Runtime::new()?;
+    compio_runtime.block_on(async {
         let runtime = AsyncRuntime::new()?;
 
         // Build module configuration
@@ -62,27 +62,8 @@ pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize)
         .await?;
 
         // Execute all pending jobs (promises, microtasks)
-        loop {
-            runtime.idle().await;
-
-            let has_pending_job = async_with!(context => |ctx| {
-                let has_pending_job = ctx.execute_pending_job();
-
-                // Check for exceptions after each job execution
-                let exception_value = ctx.catch();
-                if let Some(exception) = exception_value.into_exception() {
-                    handle_error(CaughtError::Exception(exception));
-                    // Don't exit - let test runner continue
-                }
-
-                Ok::<_, Box<dyn Error>>(has_pending_job)
-            })
-            .await?;
-
-            if !has_pending_job {
-                break;
-            }
-        }
+        // idle() should integrate with compio through standard Future polling
+        runtime.idle().await;
 
         // Call globalThis[Symbol.for('mdeno.internal')].test.runTests after module execution completes
         let (passed, failed) = async_with!(context => |ctx| {
@@ -169,8 +150,8 @@ fn run_test_bytecode_bundle(
 ) -> Result<(usize, usize), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
 
-    let tokio_runtime = tokio::runtime::Runtime::new()?;
-    tokio_runtime.block_on(async {
+    let compio_runtime = compio_runtime::Runtime::new()?;
+    compio_runtime.block_on(async {
         let runtime = AsyncRuntime::new()?;
 
         // Set up custom loader for bytecode map
@@ -248,27 +229,8 @@ fn run_test_bytecode_bundle(
         .await?;
 
         // Execute all pending jobs (promises, microtasks)
-        loop {
-            runtime.idle().await;
-
-            let has_pending_job = async_with!(context => |ctx| {
-                let has_pending_job = ctx.execute_pending_job();
-
-                // Check for exceptions after each job execution
-                let exception_value = ctx.catch();
-                if let Some(exception) = exception_value.into_exception() {
-                    handle_error(CaughtError::Exception(exception));
-                    // Don't exit - let test runner continue
-                }
-
-                Ok::<_, Box<dyn Error>>(has_pending_job)
-            })
-            .await?;
-
-            if !has_pending_job {
-                break;
-            }
-        }
+        // idle() should integrate with compio through standard Future polling
+        runtime.idle().await;
 
         // Call globalThis[Symbol.for('mdeno.internal')].test.runTests after module execution completes
         let (passed, failed) = async_with!(context => |ctx| {

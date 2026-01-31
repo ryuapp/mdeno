@@ -2,15 +2,33 @@
 
 use crate::common::{BytecodeBundle, handle_error, setup_extensions};
 use crate::module_builder;
-use rquickjs::{AsyncContext, AsyncRuntime, CatchResultExt, CaughtError, Module, async_with};
+use rquickjs::{AsyncContext, AsyncRuntime, CatchResultExt, Module, async_with};
 use std::error::Error;
 use std::sync::Arc;
+
+/// Execute an async block and drive all futures with runtime.idle()
+/// This is a helper to ensure consistent behavior across all execution paths.
+/// The closure should contain the async_with! block.
+async fn execute_with_idle<F, Fut>(runtime: &AsyncRuntime, f: F) -> Result<(), Box<dyn Error>>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<(), Box<dyn Error>>>,
+{
+    // Execute the user's async block
+    f().await?;
+
+    // Drive all pending futures (QuickJS jobs + external I/O)
+    // This is critical for compio integration - don't use promise.finish()
+    runtime.idle().await;
+
+    Ok(())
+}
 
 pub fn run_js_code_with_path(js_code: &str, file_path: &str) -> Result<(), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
 
-    let tokio_runtime = tokio::runtime::Runtime::new()?;
-    tokio_runtime.block_on(async {
+    let compio_runtime = compio_runtime::Runtime::new()?;
+    compio_runtime.block_on(async {
         let runtime = AsyncRuntime::new()?;
 
         // Build module configuration
@@ -27,44 +45,25 @@ pub fn run_js_code_with_path(js_code: &str, file_path: &str) -> Result<(), Box<d
 
         let context = AsyncContext::full(&runtime).await?;
 
-        async_with!(context => |ctx| {
-            setup_extensions(&ctx)?;
+        execute_with_idle(&runtime, || async {
+            async_with!(context => |ctx| {
+                setup_extensions(&ctx)?;
 
-            let result = {
-                Module::evaluate(ctx.clone(), file_path, js_code).and_then(|m| m.finish::<()>())
-            };
+                // Evaluate and get the module, but don't call finish()
+                // execute_with_idle will drive all futures via runtime.idle()
+                let _module = Module::evaluate(ctx.clone(), file_path, js_code)
+                    .catch(&ctx)
+                    .map_err(|caught| {
+                        handle_error(caught);
+                        std::process::exit(1);
+                    })
+                    .unwrap();
 
-            if let Err(caught) = result.catch(&ctx) {
-                handle_error(caught);
-                std::process::exit(1);
-            }
-
-            Ok::<_, Box<dyn Error>>(())
+                Ok::<_, Box<dyn Error>>(())
+            })
+            .await
         })
         .await?;
-
-        // Execute all pending jobs (promises, microtasks)
-        loop {
-            runtime.idle().await;
-
-            let has_pending_job = async_with!(context => |ctx| {
-                let has_pending_job = ctx.execute_pending_job();
-
-                // Check for exceptions after each job execution
-                let exception_value = ctx.catch();
-                if let Some(exception) = exception_value.into_exception() {
-                    handle_error(CaughtError::Exception(exception));
-                    std::process::exit(1);
-                }
-
-                Ok::<_, Box<dyn Error>>(has_pending_job)
-            })
-            .await?;
-
-            if !has_pending_job {
-                break;
-            }
-        }
 
         Ok(())
     })
@@ -88,8 +87,8 @@ pub fn run_bytecode(bytecode: &[u8]) -> Result<(), Box<dyn Error>> {
 pub fn run_bytecode_bundle(bundle: BytecodeBundle) -> Result<(), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
 
-    let tokio_runtime = tokio::runtime::Runtime::new()?;
-    tokio_runtime.block_on(async {
+    let compio_runtime = compio_runtime::Runtime::new()?;
+    compio_runtime.block_on(async {
         let runtime = AsyncRuntime::new()?;
 
         // Set up custom loader for bytecode map
@@ -106,82 +105,56 @@ pub fn run_bytecode_bundle(bundle: BytecodeBundle) -> Result<(), Box<dyn Error>>
 
         let context = AsyncContext::full(&runtime).await?;
 
-        async_with!(context => |ctx| {
-            setup_extensions(&ctx)?;
+        execute_with_idle(&runtime, || async {
+            async_with!(context => |ctx| {
+                setup_extensions(&ctx)?;
 
-            // Use the specified entry point
-            let entry_bytecode = bytecode_map
-                .get(&bundle.entry_point)
-                .ok_or_else(|| format!("Entry module not found: {}", bundle.entry_point))?;
+                // Use the specified entry point
+                let entry_bytecode = bytecode_map
+                    .get(&bundle.entry_point)
+                    .ok_or_else(|| format!("Entry module not found: {}", bundle.entry_point))?;
 
-            let module = unsafe {
-                Module::load(ctx.clone(), entry_bytecode)
+                let module = unsafe {
+                    Module::load(ctx.clone(), entry_bytecode)
+                        .catch(&ctx)
+                        .map_err(|e| {
+                            let mut error_msg =
+                                format!("Failed to load entry module '{}': ", bundle.entry_point);
+                            match e {
+                                rquickjs::CaughtError::Exception(ex) => {
+                                    if let Some(msg) = ex.message() {
+                                        error_msg.push_str(&msg);
+                                    } else {
+                                        error_msg.push_str("Unknown exception");
+                                    }
+                                    if let Some(stack) = ex.stack() {
+                                        error_msg.push_str("\nStack: ");
+                                        error_msg.push_str(&stack);
+                                    }
+                                }
+                                _ => {
+                                    error_msg.push_str(&format!("{:?}", e));
+                                }
+                            }
+                            error_msg
+                        })?
+                };
+
+                // Evaluate the module - execute_with_idle will drive all futures
+                let (_module, _promise) = module
+                    .eval()
                     .catch(&ctx)
-                    .map_err(|e| {
-                        let mut error_msg =
-                            format!("Failed to load entry module '{}': ", bundle.entry_point);
-                        match e {
-                            rquickjs::CaughtError::Exception(ex) => {
-                                if let Some(msg) = ex.message() {
-                                    error_msg.push_str(&msg);
-                                } else {
-                                    error_msg.push_str("Unknown exception");
-                                }
-                                if let Some(stack) = ex.stack() {
-                                    error_msg.push_str("\nStack: ");
-                                    error_msg.push_str(&stack);
-                                }
-                            }
-                            _ => {
-                                error_msg.push_str(&format!("{:?}", e));
-                            }
-                        }
-                        error_msg
-                    })?
-            };
+                    .map_err(|caught| {
+                        handle_error(caught);
+                        std::process::exit(1);
+                    })
+                    .unwrap();
 
-            // Evaluate the module
-            let (_module, promise) = module
-                .eval()
-                .catch(&ctx)
-                .map_err(|caught| {
-                    handle_error(caught);
-                    std::process::exit(1);
-                })
-                .unwrap();
-
-            // Wait for Top Level Await to complete
-            promise.finish::<()>().catch(&ctx).map_err(|caught| {
-                handle_error(caught);
-                std::process::exit(1);
-            }).ok();
-
-            Ok::<_, Box<dyn Error>>(())
+                Ok::<_, Box<dyn Error>>(())
+            })
+            .await
         })
         .await?;
-
-        // Execute all pending jobs (promises, microtasks)
-        loop {
-            runtime.idle().await;
-
-            let has_pending_job = async_with!(context => |ctx| {
-                let has_pending_job = ctx.execute_pending_job();
-
-                // Check for exceptions after each job execution
-                let exception_value = ctx.catch();
-                if let Some(exception) = exception_value.into_exception() {
-                    handle_error(CaughtError::Exception(exception));
-                    std::process::exit(1);
-                }
-
-                Ok::<_, Box<dyn Error>>(has_pending_job)
-            })
-            .await?;
-
-            if !has_pending_job {
-                break;
-            }
-        }
 
         Ok(())
     })
@@ -193,8 +166,8 @@ pub fn run_bytecode_with_loader(
 ) -> Result<(), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
 
-    let tokio_runtime = tokio::runtime::Runtime::new()?;
-    tokio_runtime.block_on(async {
+    let compio_runtime = compio_runtime::Runtime::new()?;
+    compio_runtime.block_on(async {
         let runtime = AsyncRuntime::new()?;
 
         if enable_loader {
@@ -211,48 +184,28 @@ pub fn run_bytecode_with_loader(
 
         let context = AsyncContext::full(&runtime).await?;
 
-        async_with!(context => |ctx| {
-            setup_extensions(&ctx)?;
+        execute_with_idle(&runtime, || async {
+            async_with!(context => |ctx| {
+                setup_extensions(&ctx)?;
 
-            // Load bytecode using Module::load
-            let module = unsafe { Module::load(ctx.clone(), bytecode)? };
+                // Load bytecode using Module::load
+                let module = unsafe { Module::load(ctx.clone(), bytecode)? };
 
-            // Evaluate the module
-            let (_module, _promise) = module
-                .eval()
-                .catch(&ctx)
-                .map_err(|caught| {
-                    handle_error(caught);
-                    std::process::exit(1);
-                })
-                .unwrap();
+                // Evaluate the module - execute_with_idle will drive all futures
+                let (_module, _promise) = module
+                    .eval()
+                    .catch(&ctx)
+                    .map_err(|caught| {
+                        handle_error(caught);
+                        std::process::exit(1);
+                    })
+                    .unwrap();
 
-            Ok::<_, Box<dyn Error>>(())
+                Ok::<_, Box<dyn Error>>(())
+            })
+            .await
         })
         .await?;
-
-        // Execute all pending jobs (promises, microtasks)
-        loop {
-            runtime.idle().await;
-
-            let has_pending_job = async_with!(context => |ctx| {
-                let has_pending_job = ctx.execute_pending_job();
-
-                // Check for exceptions after each job execution
-                let exception_value = ctx.catch();
-                if let Some(exception) = exception_value.into_exception() {
-                    handle_error(CaughtError::Exception(exception));
-                    std::process::exit(1);
-                }
-
-                Ok::<_, Box<dyn Error>>(has_pending_job)
-            })
-            .await?;
-
-            if !has_pending_job {
-                break;
-            }
-        }
 
         Ok(())
     })

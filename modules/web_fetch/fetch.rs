@@ -37,37 +37,33 @@ pub async fn fetch<'js>(
         .map_err(|_e| rquickjs::Error::Unknown)?;
 
     // Return Response instance directly
-    Response::from_fetch(ctx, status, headers_map, body)
+    let response = Response::from_fetch(ctx, status, headers_map, body)?;
+    Ok(response)
 }
 
-// Global HTTP client with connection pooling
-static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-    reqwest::Client::builder()
-        .pool_max_idle_per_host(10)
-        .pool_idle_timeout(std::time::Duration::from_secs(90))
-        .build()
-        .expect("Failed to create HTTP client")
-});
+// Global HTTP client
+static HTTP_CLIENT: Lazy<cyper::Client> = Lazy::new(|| cyper::ClientBuilder::new().build());
 
 async fn fetch_request(
     url: &str,
     method: &str,
 ) -> Result<(u16, HashMap<String, String>, String), String> {
-    // Parse method from string (supports both standard and custom methods)
-    let method_enum = reqwest::Method::from_bytes(method.as_bytes())
-        .map_err(|e| format!("Invalid method: {}", e))?;
-
-    let request = HTTP_CLIENT
-        .request(method_enum, url)
-        .header("User-Agent", "mdeno/0.1.0")
-        .build()
-        .map_err(|e| format!("Failed to build request: {}", e))?;
-
-    // Send request with connection pooling
-    let response = HTTP_CLIENT
-        .execute(request)
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+    // Call cyper directly - the patched waker should maintain the runtime context
+    let response = match method.to_uppercase().as_str() {
+        "GET" => HTTP_CLIENT.get(url),
+        "POST" => HTTP_CLIENT.post(url),
+        "PUT" => HTTP_CLIENT.put(url),
+        "DELETE" => HTTP_CLIENT.delete(url),
+        "PATCH" => HTTP_CLIENT.patch(url),
+        "HEAD" => HTTP_CLIENT.head(url),
+        _ => return Err(format!("Unsupported HTTP method: {}", method)),
+    }
+    .map_err(|e| format!("Failed to create request: {}", e))?
+    .header("User-Agent", "mdeno/0.1.0")
+    .map_err(|e| format!("Failed to set header: {}", e))?
+    .send()
+    .await
+    .map_err(|e| format!("Request failed: {:?}", e))?;
 
     let status = response.status().as_u16();
 
