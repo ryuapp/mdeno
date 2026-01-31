@@ -1,0 +1,12 @@
+[package]
+name = "deno_test"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+rquickjs = { version = "=0.11.0" }
+deno_terminal = "0.2"
