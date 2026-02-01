@@ -15,8 +15,9 @@ rustls = ["cyper/rustls"]
 [dependencies]
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader", "futures", "macro"] }
 compio = { version = "0.17.0" }
-cyper = { version = "0.7.0" }
+cyper = { version = "=0.7.1" }
 once_cell = { version = "1.21.3" }
 serde_json = { version = "1.0.148" }
+ada-url = "3.3.0"
 utils = { path = "../utils" }
 

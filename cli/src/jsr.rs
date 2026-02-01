@@ -94,6 +94,7 @@ impl JsrResolver {
 
         // Determine file path from exports
         let exports = self.fetch_exports(&full_package, &resolved_version)?;
+        let has_file_path = parsed.file_path.is_some();
         let export_key = if let Some(path) = parsed.file_path {
             // Export name provided (e.g., "assert_equals" from jsr:@std/assert@1.0.0/assert_equals)
             format!("./{}", path)
@@ -118,6 +119,25 @@ impl JsrResolver {
             &mut module_map,
             &mut HashSet::new(),
         )?;
+
+        // If this was a bare package import (no file path), also add an entry
+        // for the base specifier pointing to the same entry point
+        if !has_file_path {
+            let file_without_ext = file.trim_start_matches("./").trim_end_matches(".ts");
+            let entry_spec = format!(
+                "jsr:{}/{}@{}/{}",
+                parsed.scope, parsed.package, resolved_version, file_without_ext
+            );
+            let base_spec = format!(
+                "jsr:{}/{}@{}",
+                parsed.scope, parsed.package, resolved_version
+            );
+
+            // Add base specifier pointing to the same cache path as the entry point
+            if let Some(cache_path) = module_map.get(&entry_spec) {
+                module_map.insert(base_spec, cache_path.clone());
+            }
+        }
 
         Ok(module_map)
     }
@@ -206,28 +226,26 @@ impl JsrResolver {
             return Ok(cache_path);
         }
 
-        // Download from JSR
+        // Download from JSR using cyper
         let file_url = format!("{}/{}/{}/{}", JSR_URL, package, version, file_path);
 
-        let agent = ureq::config::Config::builder()
-            .tls_config(
-                ureq::tls::TlsConfig::builder()
-                    .provider(ureq::tls::TlsProvider::NativeTls)
-                    .root_certs(ureq::tls::RootCerts::PlatformVerifier)
-                    .build(),
-            )
-            .build()
-            .new_agent();
+        let compio_runtime = compio::runtime::Runtime::new()
+            .map_err(|e| format!("Failed to create runtime: {}", e))?;
 
-        let mut response = agent
-            .get(&file_url)
-            .call()
-            .map_err(|e| format!("Failed to fetch JSR file: {}", e))?;
+        let mut content = compio_runtime.block_on(async {
+            let client = cyper::Client::new();
+            let response = client
+                .get(&file_url)
+                .map_err(|e| format!("Failed to create request: {}", e))?
+                .send()
+                .await
+                .map_err(|e| format!("Failed to fetch JSR file: {}", e))?;
 
-        let mut content = response
-            .body_mut()
-            .read_to_string()
-            .map_err(|e| format!("Failed to read JSR file: {}", e))?;
+            response
+                .text()
+                .await
+                .map_err(|e| format!("Failed to read JSR file: {}", e))
+        })?;
 
         // Strip TypeScript if .ts file
         if file_path.ends_with(".ts") {
@@ -257,25 +275,23 @@ impl JsrResolver {
     ) -> Result<HashMap<String, String>, String> {
         let meta_url = format!("{}/{}/{}_meta.json", JSR_URL, package, version);
 
-        let agent = ureq::config::Config::builder()
-            .tls_config(
-                ureq::tls::TlsConfig::builder()
-                    .provider(ureq::tls::TlsProvider::NativeTls)
-                    .root_certs(ureq::tls::RootCerts::PlatformVerifier)
-                    .build(),
-            )
-            .build()
-            .new_agent();
+        let compio_runtime = compio::runtime::Runtime::new()
+            .map_err(|e| format!("Failed to create runtime: {}", e))?;
 
-        let mut response = agent
-            .get(&meta_url)
-            .call()
-            .map_err(|e| format!("Failed to fetch JSR version metadata: {}", e))?;
+        let body = compio_runtime.block_on(async {
+            let client = cyper::Client::new();
+            let response = client
+                .get(&meta_url)
+                .map_err(|e| format!("Failed to create request: {}", e))?
+                .send()
+                .await
+                .map_err(|e| format!("Failed to fetch JSR version metadata: {}", e))?;
 
-        let body = response
-            .body_mut()
-            .read_to_string()
-            .map_err(|e| format!("Failed to read JSR version metadata: {}", e))?;
+            response
+                .text()
+                .await
+                .map_err(|e| format!("Failed to read JSR version metadata: {}", e))
+        })?;
 
         let metadata: JsrVersionMetadata = serde_json::from_str(&body)
             .map_err(|e| format!("Failed to parse JSR version metadata: {}", e))?;
