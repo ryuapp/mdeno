@@ -1,24 +1,25 @@
 use crate::search_params::UrlSearchParams;
 use rquickjs::{Class, Ctx, JsLifetime, class::Trace, prelude::*};
 use std::cell::RefCell;
-use std::marker::PhantomData;
 use std::rc::Rc;
 
-#[derive(Clone, Trace, JsLifetime)]
+#[derive(Clone, JsLifetime)]
 #[rquickjs::class(rename = "URL")]
 pub struct Url<'js> {
-    #[qjs(skip_trace)]
     inner: Rc<RefCell<ada_url::Url>>,
-    #[qjs(skip_trace)]
-    cached_search_params: Rc<RefCell<Option<Class<'js, UrlSearchParams<'js>>>>>,
-    #[qjs(skip_trace)]
-    _phantom: PhantomData<&'js ()>,
+    search_params: Class<'js, UrlSearchParams>,
+}
+
+impl<'js> Trace<'js> for Url<'js> {
+    fn trace<'a>(&self, tracer: rquickjs::class::Tracer<'a, 'js>) {
+        self.search_params.trace(tracer);
+    }
 }
 
 #[rquickjs::methods]
 impl<'js> Url<'js> {
     #[qjs(constructor)]
-    pub fn new(_ctx: Ctx<'js>, url: String, base: Opt<String>) -> rquickjs::Result<Self> {
+    pub fn new(ctx: Ctx<'js>, url: String, base: Opt<String>) -> rquickjs::Result<Self> {
         let base_ref = base.0.as_deref();
 
         let inner = ada_url::Url::parse(&url, base_ref).map_err(|e| {
@@ -30,10 +31,14 @@ impl<'js> Url<'js> {
             rquickjs::Error::new_from_js("url", "Invalid URL")
         })?;
 
+        let inner_rc = Rc::new(RefCell::new(inner));
+
+        let params = UrlSearchParams::new_with_url(ctx.clone(), inner_rc.clone())?;
+        let search_params = Class::instance(ctx, params)?;
+
         Ok(Self {
-            inner: Rc::new(RefCell::new(inner)),
-            cached_search_params: Rc::new(RefCell::new(None)),
-            _phantom: PhantomData,
+            inner: inner_rc,
+            search_params,
         })
     }
 
@@ -49,7 +54,6 @@ impl<'js> Url<'js> {
             rquickjs::Error::new_from_js("url", "Invalid URL")
         })?;
         *self.inner.borrow_mut() = new_url;
-        *self.cached_search_params.borrow_mut() = None;
         Ok(())
     }
 
@@ -67,7 +71,6 @@ impl<'js> Url<'js> {
     pub fn set_protocol(&mut self, value: String) {
         let scheme = value.trim_end_matches(':');
         let _ = self.inner.borrow_mut().set_protocol(scheme);
-        *self.cached_search_params.borrow_mut() = None;
     }
 
     #[qjs(get, rename = "username")]
@@ -151,7 +154,6 @@ impl<'js> Url<'js> {
         } else {
             let _ = self.inner.borrow_mut().set_search(Some(query));
         }
-        *self.cached_search_params.borrow_mut() = None;
     }
 
     #[qjs(get, rename = "hash")]
@@ -170,23 +172,8 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(get, rename = "searchParams")]
-    pub fn get_search_params(
-        &self,
-        ctx: Ctx<'js>,
-    ) -> rquickjs::Result<Class<'js, UrlSearchParams<'js>>> {
-        // Check if we have a cached instance
-        if let Some(cached) = self.cached_search_params.borrow().as_ref() {
-            return Ok(cached.clone());
-        }
-
-        // Create new URLSearchParams instance with reference to this URL
-        let params = UrlSearchParams::new_with_url(ctx.clone(), self.inner.clone())?;
-        let instance = Class::instance(ctx, params)?;
-
-        // Cache the instance
-        *self.cached_search_params.borrow_mut() = Some(instance.clone());
-
-        Ok(instance)
+    pub fn get_search_params(&self) -> Class<'js, UrlSearchParams> {
+        self.search_params.clone()
     }
 
     #[qjs(rename = "toString")]
@@ -204,10 +191,10 @@ impl<'js> Url<'js> {
         ctx: Ctx<'js>,
         url: String,
         base: Opt<String>,
-    ) -> rquickjs::Result<Option<Class<'js, Url<'js>>>> {
+    ) -> rquickjs::Result<rquickjs::Value<'js>> {
         match Url::new(ctx.clone(), url, base) {
-            Ok(url) => Ok(Some(Class::instance(ctx, url)?)),
-            Err(_) => Ok(None),
+            Ok(url) => Class::instance(ctx.clone(), url)?.into_js(&ctx),
+            Err(_) => Ok(rquickjs::Value::new_null(ctx)),
         }
     }
 
