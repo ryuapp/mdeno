@@ -8,8 +8,8 @@ use std::error::Error;
 use std::sync::Arc;
 
 pub fn compile_js(js_code: &str, output_name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
-    let tokio_runtime = tokio::runtime::Runtime::new()?;
-    tokio_runtime.block_on(async {
+    let compio_runtime = compio_runtime::Runtime::new()?;
+    compio_runtime.block_on(async {
         let runtime = AsyncRuntime::new()?;
 
         // Set up module loader for compile time
@@ -38,8 +38,8 @@ pub fn compile_modules(
     modules: HashMap<String, String>,
     entry_point: String,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
-    let tokio_runtime = tokio::runtime::Runtime::new()?;
-    tokio_runtime.block_on(async {
+    let compio_runtime = compio_runtime::Runtime::new()?;
+    compio_runtime.block_on(async {
         let runtime = AsyncRuntime::new()?;
 
         // Set up module loader with source map for compile time

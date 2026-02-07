@@ -9,14 +9,15 @@ path = "lib.rs"
 
 [features]
 default = []
-native-tls = ["reqwest/native-tls", "reqwest/http2"]
-rustls = ["reqwest/rustls", "reqwest/http2"]
+native-tls = ["cyper/native-tls"]
+rustls = ["cyper/rustls", "compio-tls/ring"]
 
 [dependencies]
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader", "futures", "macro"] }
-tokio = { version = "1.48.0", features = ["rt", "net", "time", "rt-multi-thread"] }
-reqwest = { version = "0.13.1", default-features = false }
+cyper = { version = "=0.7.1", default-features = false }
+compio-tls = { version = "0.8.0", default-features = false, optional = true }
 once_cell = { version = "1.21.3" }
 serde_json = { version = "1.0.148" }
+ada-url = "3.3.0"
 utils = { path = "../utils" }
 

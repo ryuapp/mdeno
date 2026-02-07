@@ -13,6 +13,13 @@ pub struct TestContext {
 pub(crate) struct TestContextInner {
     pub(crate) tests: Vec<TestDef>,
     pub(crate) filename: String,
+    pub(crate) pending_promises: Vec<PendingPromise>,
+}
+
+pub(crate) struct PendingPromise {
+    pub(crate) test_name: String,
+    pub(crate) promise: rquickjs::Persistent<rquickjs::Promise<'static>>,
+    pub(crate) start_time: std::time::Instant,
 }
 
 pub(crate) struct TestDef {
@@ -30,6 +37,7 @@ impl TestContext {
             inner: Arc::new(Mutex::new(TestContextInner {
                 tests: Vec::new(),
                 filename: "unknown".to_string(),
+                pending_promises: Vec::new(),
             })),
         }
     }
@@ -38,6 +46,20 @@ impl TestContext {
     pub fn set_filename(&self, filename: String) {
         let mut inner = self.inner.lock().unwrap();
         inner.filename = filename;
+    }
+
+    /// Clean up all persistent objects to avoid GC assertion
+    pub fn cleanup(&self) {
+        let mut inner = self.inner.lock().unwrap();
+
+        // Explicitly drop each persistent object
+        for test in inner.tests.drain(..) {
+            drop(test.func);
+        }
+
+        for promise in inner.pending_promises.drain(..) {
+            drop(promise.promise);
+        }
     }
 
     #[qjs(rename = "registerTest")]
@@ -110,6 +132,7 @@ impl TestContext {
         );
 
         let mut results = Vec::new();
+        let mut pending_promises_temp = Vec::new();
 
         // Restore functions and run tests
         for test in &inner.tests {
@@ -133,25 +156,18 @@ impl TestContext {
             let (passed, error, error_stack) = match func.call::<_, Value>(()).catch(&ctx) {
                 Ok(ret_val) => {
                     // Check if it's a promise
-                    if let Some(promise) = ret_val.as_promise() {
-                        // Wait for promise to resolve
-                        match promise.finish::<Value>().catch(&ctx) {
-                            Ok(_) => (true, None, None),
-                            Err(caught) => {
-                                // Extract error message and stack trace
-                                let (error_msg, stack_trace) = match caught {
-                                    rquickjs::CaughtError::Exception(ex) => {
-                                        let msg =
-                                            ex.message().unwrap_or("Unknown error".to_string());
-                                        let stack = ex.stack();
-                                        (msg, stack)
-                                    }
-                                    rquickjs::CaughtError::Error(e) => (format!("{}", e), None),
-                                    rquickjs::CaughtError::Value(v) => (format!("{:?}", v), None),
-                                };
-                                (false, Some(error_msg), stack_trace)
-                            }
-                        }
+                    if ret_val.is_promise() {
+                        // Get promise and store it for later resolution (don't block with finish())
+                        // This allows compio to drive the I/O
+                        let promise = ret_val.as_promise().unwrap().clone();
+                        let promise_persistent = rquickjs::Persistent::save(&ctx, promise);
+                        pending_promises_temp.push(PendingPromise {
+                            test_name: test.name.clone(),
+                            promise: promise_persistent,
+                            start_time: start,
+                        });
+                        // Mark as pending - will be resolved later
+                        continue;
                     } else {
                         (true, None, None)
                     }
@@ -190,6 +206,9 @@ impl TestContext {
             });
         }
 
+        // Store pending promises
+        inner.pending_promises.extend(pending_promises_temp);
+
         // Print results summary
         print_results(&results, &inner.filename);
 
@@ -199,6 +218,87 @@ impl TestContext {
 
         // Clear for next file
         inner.tests.clear();
+
+        // Return results as an object
+        let result = Object::new(ctx.clone())?;
+        result.set("passed", passed)?;
+        result.set("failed", failed)?;
+        Ok(result.into_value())
+    }
+
+    #[qjs(rename = "resolvePending")]
+    pub fn resolve_pending<'js>(&self, ctx: Ctx<'js>) -> Result<Value<'js>> {
+        use deno_terminal::colors;
+        use rquickjs::CatchResultExt;
+
+        let mut inner = self.inner.lock().unwrap();
+        let pending = std::mem::take(&mut inner.pending_promises);
+        drop(inner); // Release lock
+
+        let mut results = Vec::new();
+
+        for pending_promise in pending {
+            let promise = match pending_promise.promise.restore(&ctx) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Error restoring promise: {}", e);
+                    continue;
+                }
+            };
+
+            // Check promise state - finish() should be safe here since runtime.idle() was already called
+            let (passed, error, error_stack) = match promise.finish::<Value>().catch(&ctx) {
+                Ok(_) => (true, None, None),
+                Err(caught) => {
+                    let (error_msg, stack_trace) = match caught {
+                        rquickjs::CaughtError::Exception(ex) => {
+                            let msg = ex.message().unwrap_or("Unknown error".to_string());
+                            let stack = ex.stack();
+                            (msg, stack)
+                        }
+                        rquickjs::CaughtError::Error(e) => (format!("{}", e), None),
+                        rquickjs::CaughtError::Value(v) => (format!("{:?}", v), None),
+                    };
+                    (false, Some(error_msg), stack_trace)
+                }
+            };
+
+            // Explicitly drop promise to help GC
+            drop(promise);
+
+            let duration_ms = pending_promise.start_time.elapsed().as_millis();
+
+            // Print result
+            let status = if passed {
+                colors::green("ok")
+            } else {
+                colors::red("FAILED")
+            };
+            let time_str = format!("({}ms)", duration_ms);
+            println!(
+                "{} ... {} {}",
+                pending_promise.test_name,
+                status,
+                colors::gray(&time_str)
+            );
+
+            results.push(TestResult {
+                name: pending_promise.test_name,
+                passed,
+                error,
+                error_stack,
+            });
+        }
+
+        // Print results summary if there were any
+        if !results.is_empty() {
+            let inner = self.inner.lock().unwrap();
+            print_results(&results, &inner.filename);
+        }
+
+        // Calculate results
+        let passed = results.iter().filter(|r| r.passed).count();
+        let failed = results.iter().filter(|r| !r.passed).count();
 
         // Return results as an object
         let result = Object::new(ctx.clone())?;
