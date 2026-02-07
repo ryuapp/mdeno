@@ -34,3 +34,9 @@ pub fn set_test_filename<'js>(ctx: Ctx<'js>, filename: String) -> Result<()> {
     test_context.set_filename(filename);
     Ok(())
 }
+
+#[rquickjs::function]
+pub fn resolve_pending<'js>(ctx: Ctx<'js>) -> Result<Value<'js>> {
+    let test_context = get_test_context(&ctx)?;
+    test_context.resolve_pending(ctx)
+}

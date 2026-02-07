@@ -9,7 +9,7 @@ use std::sync::Arc;
 /// Execute an async block and drive all futures with runtime.idle()
 /// This is a helper to ensure consistent behavior across all execution paths.
 /// The closure should contain the async_with! block.
-async fn execute_with_idle<F, Fut>(runtime: &AsyncRuntime, f: F) -> Result<(), Box<dyn Error>>
+pub async fn execute_with_idle<F, Fut>(runtime: &AsyncRuntime, f: F) -> Result<(), Box<dyn Error>>
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<(), Box<dyn Error>>>,
@@ -24,26 +24,69 @@ where
     Ok(())
 }
 
-pub fn run_js_code_with_path(js_code: &str, file_path: &str) -> Result<(), Box<dyn Error>> {
+/// Common runtime setup for all execution modes
+/// Returns (runtime, context, module_registry)
+pub async fn setup_runtime_with_loader() -> Result<
+    (
+        AsyncRuntime,
+        AsyncContext,
+        Arc<crate::module_builder::ModuleRegistry>,
+    ),
+    Box<dyn Error>,
+> {
     use module_builder::ModuleBuilder;
 
+    let runtime = AsyncRuntime::new()?;
+
+    // Build module configuration
+    let (_global_attachment, module_registry) = ModuleBuilder::default().build();
+    let registry = Arc::new(module_registry);
+
+    // Set module loader before creating context
+    runtime
+        .set_loader(
+            module_builder::NodeResolver::new(registry.clone()),
+            module_builder::NodeLoader::new(registry.clone()),
+        )
+        .await;
+
+    let context = AsyncContext::full(&runtime).await?;
+
+    Ok((runtime, context, registry))
+}
+
+/// Execute pending jobs loop (for test mode)
+pub async fn execute_pending_jobs_loop(
+    runtime: &AsyncRuntime,
+    context: &AsyncContext,
+) -> Result<(), Box<dyn Error>> {
+    loop {
+        runtime.idle().await;
+
+        let has_pending_job = async_with!(context => |ctx| {
+            let has_pending_job = ctx.execute_pending_job();
+
+            let exception_value = ctx.catch();
+            if let Some(exception) = exception_value.into_exception() {
+                handle_error(rquickjs::CaughtError::Exception(exception));
+            }
+
+            Ok::<_, Box<dyn Error>>(has_pending_job)
+        })
+        .await?;
+
+        if !has_pending_job {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn run_js_code_with_path(js_code: &str, file_path: &str) -> Result<(), Box<dyn Error>> {
     let compio_runtime = compio_runtime::Runtime::new()?;
     compio_runtime.block_on(async {
-        let runtime = AsyncRuntime::new()?;
-
-        // Build module configuration
-        let (_global_attachment, module_registry) = ModuleBuilder::default().build();
-        let registry = Arc::new(module_registry);
-
-        // Set module loader before creating context
-        runtime
-            .set_loader(
-                module_builder::NodeResolver::new(registry.clone()),
-                module_builder::NodeLoader::new(registry.clone()),
-            )
-            .await;
-
-        let context = AsyncContext::full(&runtime).await?;
+        let (runtime, context, _registry) = setup_runtime_with_loader().await?;
 
         execute_with_idle(&runtime, || async {
             async_with!(context => |ctx| {

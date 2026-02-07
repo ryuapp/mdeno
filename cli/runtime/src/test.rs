@@ -1,11 +1,11 @@
 // Test execution functions for Deno.test()
 
 use crate::common::{BytecodeBundle, handle_error, setup_extensions};
+use crate::executor::{execute_pending_jobs_loop, setup_runtime_with_loader};
 use crate::module_builder;
 use deno_test::TestContext;
 use rquickjs::{
-    AsyncContext, AsyncRuntime, CatchResultExt, CaughtError, Function, Module, Object, Value,
-    async_with,
+    AsyncContext, AsyncRuntime, CatchResultExt, Function, Module, Object, Value, async_with,
 };
 use std::error::Error;
 use std::sync::Arc;
@@ -21,25 +21,9 @@ fn get_test_context(ctx: &rquickjs::Ctx<'_>) -> Result<TestContext, Box<dyn Erro
 }
 
 pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize), Box<dyn Error>> {
-    use module_builder::ModuleBuilder;
-
     let compio_runtime = compio_runtime::Runtime::new()?;
     compio_runtime.block_on(async {
-        let runtime = AsyncRuntime::new()?;
-
-        // Build module configuration
-        let (_global_attachment, module_registry) = ModuleBuilder::default().build();
-        let registry = Arc::new(module_registry);
-
-        // Set module loader before creating context
-        runtime
-            .set_loader(
-                module_builder::NodeResolver::new(registry.clone()),
-                module_builder::NodeLoader::new(registry.clone()),
-            )
-            .await;
-
-        let context = AsyncContext::full(&runtime).await?;
+        let (runtime, context, _registry) = setup_runtime_with_loader().await?;
 
         async_with!(context => |ctx| {
             setup_extensions(&ctx)?;
@@ -66,7 +50,7 @@ pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize)
         runtime.idle().await;
 
         // Call globalThis[Symbol.for('mdeno.internal')].test.runTests after module execution completes
-        let (passed, failed) = async_with!(context => |ctx| {
+        let (mut passed, mut failed) = async_with!(context => |ctx| {
             // Get runTests function using Rust API
             let globals = ctx.globals();
             let symbol_ctor: Function = globals.get("Symbol")?;
@@ -101,27 +85,48 @@ pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize)
         })
         .await?;
 
+        // Drive all pending promises (including async tests)
+        runtime.idle().await;
+
+        // Resolve pending async tests after promises are driven
+        let (async_passed, async_failed) = async_with!(context => |ctx| {
+            let globals = ctx.globals();
+            let symbol_ctor: Function = globals.get("Symbol")?;
+            let symbol_for: Function = symbol_ctor.get("for")?;
+            let internal_symbol: Value = symbol_for.call(("mdeno.internal",))?;
+
+            let internal: Object = globals.get(internal_symbol)?;
+            let test_obj: Object = internal.get("test")?;
+            let resolve_pending_fn: Function = test_obj.get("resolvePending")?;
+
+            let result: Value = resolve_pending_fn.call(()).catch(&ctx).map_err(|caught| {
+                handle_error(caught);
+            }).unwrap_or_else(|_| {
+                let obj = Object::new(ctx.clone()).unwrap();
+                obj.set("passed", 0).unwrap();
+                obj.set("failed", 0).unwrap();
+                obj.into_value()
+            });
+
+            let obj: Object = result.into_object().unwrap_or_else(|| {
+                let obj = Object::new(ctx.clone()).unwrap();
+                obj.set("passed", 0).unwrap();
+                obj.set("failed", 0).unwrap();
+                obj
+            });
+            let async_passed: usize = obj.get("passed").unwrap_or(0);
+            let async_failed: usize = obj.get("failed").unwrap_or(0);
+
+            Ok::<_, Box<dyn Error>>((async_passed, async_failed))
+        })
+        .await?;
+
+        // Add async test results
+        passed += async_passed;
+        failed += async_failed;
+
         // Execute pending jobs from runTests
-        loop {
-            runtime.idle().await;
-
-            let has_pending_job = async_with!(context => |ctx| {
-                let has_pending_job = ctx.execute_pending_job();
-
-                let exception_value = ctx.catch();
-                if let Some(exception) = exception_value.into_exception() {
-                    handle_error(CaughtError::Exception(exception));
-                    // Don't exit - let test runner continue
-                }
-
-                Ok::<_, Box<dyn Error>>(has_pending_job)
-            })
-            .await?;
-
-            if !has_pending_job {
-                break;
-            }
-        }
+        execute_pending_jobs_loop(&runtime, &context).await?;
 
         Ok((passed, failed))
     })
@@ -233,7 +238,7 @@ fn run_test_bytecode_bundle(
         runtime.idle().await;
 
         // Call globalThis[Symbol.for('mdeno.internal')].test.runTests after module execution completes
-        let (passed, failed) = async_with!(context => |ctx| {
+        let (mut passed, mut failed) = async_with!(context => |ctx| {
             // Get runTests function using Rust API
             let globals = ctx.globals();
             let symbol_ctor: Function = globals.get("Symbol")?;
@@ -268,27 +273,48 @@ fn run_test_bytecode_bundle(
         })
         .await?;
 
+        // Drive all pending promises (including async tests)
+        runtime.idle().await;
+
+        // Resolve pending async tests after promises are driven
+        let (async_passed, async_failed) = async_with!(context => |ctx| {
+            let globals = ctx.globals();
+            let symbol_ctor: Function = globals.get("Symbol")?;
+            let symbol_for: Function = symbol_ctor.get("for")?;
+            let internal_symbol: Value = symbol_for.call(("mdeno.internal",))?;
+
+            let internal: Object = globals.get(internal_symbol)?;
+            let test_obj: Object = internal.get("test")?;
+            let resolve_pending_fn: Function = test_obj.get("resolvePending")?;
+
+            let result: Value = resolve_pending_fn.call(()).catch(&ctx).map_err(|caught| {
+                handle_error(caught);
+            }).unwrap_or_else(|_| {
+                let obj = Object::new(ctx.clone()).unwrap();
+                obj.set("passed", 0).unwrap();
+                obj.set("failed", 0).unwrap();
+                obj.into_value()
+            });
+
+            let obj: Object = result.into_object().unwrap_or_else(|| {
+                let obj = Object::new(ctx.clone()).unwrap();
+                obj.set("passed", 0).unwrap();
+                obj.set("failed", 0).unwrap();
+                obj
+            });
+            let async_passed: usize = obj.get("passed").unwrap_or(0);
+            let async_failed: usize = obj.get("failed").unwrap_or(0);
+
+            Ok::<_, Box<dyn Error>>((async_passed, async_failed))
+        })
+        .await?;
+
+        // Add async test results
+        passed += async_passed;
+        failed += async_failed;
+
         // Execute pending jobs from runTests
-        loop {
-            runtime.idle().await;
-
-            let has_pending_job = async_with!(context => |ctx| {
-                let has_pending_job = ctx.execute_pending_job();
-
-                let exception_value = ctx.catch();
-                if let Some(exception) = exception_value.into_exception() {
-                    handle_error(CaughtError::Exception(exception));
-                    // Don't exit - let test runner continue
-                }
-
-                Ok::<_, Box<dyn Error>>(has_pending_job)
-            })
-            .await?;
-
-            if !has_pending_job {
-                break;
-            }
-        }
+        execute_pending_jobs_loop(&runtime, &context).await?;
 
         Ok((passed, failed))
     })

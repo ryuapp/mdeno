@@ -5,7 +5,7 @@ mod test_context;
 mod test_runner;
 
 pub use test_context::TestContext;
-use test_runner::{deno_test, run_tests, set_test_filename};
+use test_runner::{deno_test, resolve_pending, run_tests, set_test_filename};
 
 use rquickjs::{Ctx, Function, Object, Result, Value};
 
@@ -40,6 +40,10 @@ pub fn init(ctx: &Ctx<'_>) -> Result<()> {
     test_obj.set(
         "setFileName",
         Function::new(ctx.clone(), set_test_filename)?,
+    )?;
+    test_obj.set(
+        "resolvePending",
+        Function::new(ctx.clone(), resolve_pending)?,
     )?;
     internal.set("test", test_obj)?;
 
