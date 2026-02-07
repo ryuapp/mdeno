@@ -104,12 +104,41 @@ pub fn run_js_code_with_path(js_code: &str, file_path: &str) -> Result<(), Box<d
 
                 Ok::<_, Box<dyn Error>>(())
             })
-            .await
+            .await?;
+
+            // Clean up test infrastructure before idle() is called
+            cleanup_test_context_sync(&context).await
         })
         .await?;
 
         Ok(())
     })
+}
+
+async fn cleanup_test_context_sync(context: &AsyncContext) -> Result<(), Box<dyn Error>> {
+    use rquickjs::{Function, Object, Value};
+
+    async_with!(context => |ctx| {
+        // Try to get test context - it's OK if it doesn't exist
+        let globals = ctx.globals();
+        let symbol_ctor: Result<Function, _> = globals.get("Symbol");
+        if let Ok(symbol_ctor) = symbol_ctor {
+            let symbol_for: Result<Function, _> = symbol_ctor.get("for");
+            if let Ok(symbol_for) = symbol_for {
+                let internal_symbol: Result<Value, _> = symbol_for.call(("mdeno.internal",));
+                if let Ok(internal_symbol) = internal_symbol {
+                    let internal: Result<Object, _> = globals.get(internal_symbol);
+                    if let Ok(internal) = internal {
+                        if let Ok(test_context) = internal.get::<_, deno_test::TestContext>("testContext") {
+                            test_context.cleanup();
+                            let _ = internal.remove("testContext");
+                        }
+                    }
+                }
+            }
+        }
+        Ok::<_, Box<dyn Error>>(())
+    }).await
 }
 
 pub fn run_bytecode(bytecode: &[u8]) -> Result<(), Box<dyn Error>> {
@@ -195,7 +224,10 @@ pub fn run_bytecode_bundle(bundle: BytecodeBundle) -> Result<(), Box<dyn Error>>
 
                 Ok::<_, Box<dyn Error>>(())
             })
-            .await
+            .await?;
+
+            // Clean up test infrastructure before idle() is called
+            cleanup_test_context_sync(&context).await
         })
         .await?;
 

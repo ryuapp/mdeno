@@ -48,6 +48,20 @@ impl TestContext {
         inner.filename = filename;
     }
 
+    /// Clean up all persistent objects to avoid GC assertion
+    pub fn cleanup(&self) {
+        let mut inner = self.inner.lock().unwrap();
+
+        // Explicitly drop each persistent object
+        for test in inner.tests.drain(..) {
+            drop(test.func);
+        }
+
+        for promise in inner.pending_promises.drain(..) {
+            drop(promise.promise);
+        }
+    }
+
     #[qjs(rename = "registerTest")]
     pub fn register_test<'js>(
         &self,
@@ -232,7 +246,7 @@ impl TestContext {
                 }
             };
 
-            // Check promise state without blocking
+            // Check promise state - finish() should be safe here since runtime.idle() was already called
             let (passed, error, error_stack) = match promise.finish::<Value>().catch(&ctx) {
                 Ok(_) => (true, None, None),
                 Err(caught) => {
@@ -248,6 +262,9 @@ impl TestContext {
                     (false, Some(error_msg), stack_trace)
                 }
             };
+
+            // Explicitly drop promise to help GC
+            drop(promise);
 
             let duration_ms = pending_promise.start_time.elapsed().as_millis();
 

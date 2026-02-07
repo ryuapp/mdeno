@@ -32,9 +32,7 @@ pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize)
             let test_context = get_test_context(&ctx)?;
             test_context.set_filename(file_path.to_string());
 
-            let result = {
-                Module::evaluate(ctx.clone(), file_path, js_code).and_then(|m| m.finish::<()>())
-            };
+            let result = Module::evaluate(ctx.clone(), file_path, js_code);
 
             if let Err(caught) = result.catch(&ctx) {
                 handle_error(caught);
@@ -128,6 +126,29 @@ pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize)
         // Execute pending jobs from runTests
         execute_pending_jobs_loop(&runtime, &context).await?;
 
+        // Clean up TestContext to avoid GC assertion
+        async_with!(context => |ctx| {
+            // First cleanup the persistent objects
+            {
+                let test_context = get_test_context(&ctx)?;
+                test_context.cleanup();
+            } // test_context is dropped here
+
+            // Then remove from globals
+            let globals = ctx.globals();
+            let symbol_ctor: Function = globals.get("Symbol")?;
+            let symbol_for: Function = symbol_ctor.get("for")?;
+            let internal_symbol: Value = symbol_for.call(("mdeno.internal",))?;
+            let internal: Object = globals.get(internal_symbol)?;
+            internal.remove("testContext")?;
+
+            Ok::<_, Box<dyn Error>>(())
+        })
+        .await?;
+
+        // Drop context explicitly before runtime
+        drop(context);
+
         Ok((passed, failed))
     })
 }
@@ -211,23 +232,13 @@ fn run_test_bytecode_bundle(
                     })?
             };
 
-            // Evaluate the module
-            let (module, promise) = match module.eval().catch(&ctx) {
-                Ok(result) => result,
-                Err(caught) => {
-                    handle_error(caught);
-                    // Return early but don't exit - let test runner continue
-                    return Ok(());
-                }
-            };
+            // Evaluate the module (don't call finish() on the promise to avoid blocking with compio)
+            let result = module.eval();
 
-            // Wait for Top Level Await to complete
-            if let Err(caught) = promise.finish::<()>().catch(&ctx) {
+            if let Err(caught) = result.catch(&ctx) {
                 handle_error(caught);
-                // Don't exit - let test runner continue
+                // Return early but don't exit - let test runner continue
             }
-
-            drop(module); // Explicitly drop to avoid unused warning
 
             Ok::<_, Box<dyn Error>>(())
         })
@@ -315,6 +326,29 @@ fn run_test_bytecode_bundle(
 
         // Execute pending jobs from runTests
         execute_pending_jobs_loop(&runtime, &context).await?;
+
+        // Clean up TestContext to avoid GC assertion
+        async_with!(context => |ctx| {
+            // First cleanup the persistent objects
+            {
+                let test_context = get_test_context(&ctx)?;
+                test_context.cleanup();
+            } // test_context is dropped here
+
+            // Then remove from globals
+            let globals = ctx.globals();
+            let symbol_ctor: Function = globals.get("Symbol")?;
+            let symbol_for: Function = symbol_ctor.get("for")?;
+            let internal_symbol: Value = symbol_for.call(("mdeno.internal",))?;
+            let internal: Object = globals.get(internal_symbol)?;
+            internal.remove("testContext")?;
+
+            Ok::<_, Box<dyn Error>>(())
+        })
+        .await?;
+
+        // Drop context explicitly before runtime
+        drop(context);
 
         Ok((passed, failed))
     })
