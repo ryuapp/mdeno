@@ -17,7 +17,7 @@ pub fn execute(file_path: &str, unstable: bool) -> Result<(), Box<dyn Error>> {
     if !absolute_file_path.exists() {
         // Convert to file:// URL for error message (like Deno)
         let file_url = to_file_url(&absolute_file_path);
-        return Err(format!("Module not found \"{}\".", file_url).into());
+        return Err(format!("Module not found \"{file_url}\".").into());
     }
 
     // Canonicalize the path (resolve symlinks, normalize ..)
@@ -33,7 +33,7 @@ pub fn execute(file_path: &str, unstable: bool) -> Result<(), Box<dyn Error>> {
         Ok(modules) => modules,
         Err(e) => {
             let error_chain = format_error_chain(e.as_ref());
-            return Err(format!("Import '{}' failed.{}", entry_file_url, error_chain).into());
+            return Err(format!("Import '{entry_file_url}' failed.{error_chain}").into());
         }
     };
 

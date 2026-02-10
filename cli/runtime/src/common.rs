@@ -19,23 +19,24 @@ pub(crate) fn setup_extensions(ctx: &rquickjs::Ctx) -> Result<(), Box<dyn Error>
     Ok(())
 }
 
+#[allow(clippy::print_stderr)] // Intentional: error handler prints to stderr
 pub(crate) fn handle_error(caught: CaughtError) {
     match caught {
         CaughtError::Exception(exception) => {
             if let Some(message) = exception.message() {
-                eprintln!("Error: {}", message);
+                eprintln!("Error: {message}");
             } else {
                 eprintln!("Error: Exception (no message)");
             }
             if let Some(stack) = exception.stack() {
-                eprintln!("{}", stack);
+                eprintln!("{stack}");
             }
         }
         CaughtError::Value(value) => {
-            eprintln!("Error: {:?}", value);
+            eprintln!("Error: {value:?}");
         }
         CaughtError::Error(error) => {
-            eprintln!("Error: {:?}", error);
+            eprintln!("Error: {error:?}");
         }
     }
 }

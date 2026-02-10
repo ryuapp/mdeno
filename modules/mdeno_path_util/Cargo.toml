@@ -4,5 +4,11 @@ description = "Path utilities used in mdeno"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/ryuapp/mino"
+keywords = ["path", "utilities"]
+categories = ["filesystem"]
 
 [dependencies]
+
+[lints]
+workspace = true

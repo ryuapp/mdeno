@@ -6,8 +6,10 @@ use std::path::Path;
 use std::sync::Arc;
 use utils::ModuleDef;
 
+type InitFn = Box<dyn Fn(&Ctx<'_>) -> Result<()>>;
+
 pub struct ModuleBuilder {
-    globals: Vec<Box<dyn Fn(&Ctx<'_>) -> Result<()>>>,
+    globals: Vec<InitFn>,
     module_sources: HashMap<&'static str, fn() -> &'static str>,
 }
 
@@ -19,11 +21,13 @@ impl ModuleBuilder {
         }
     }
 
+    #[must_use]
     pub fn with_global(mut self, init: fn(&Ctx<'_>) -> Result<()>) -> Self {
         self.globals.push(Box::new(init));
         self
     }
 
+    #[must_use]
     #[allow(dead_code)]
     pub fn with_module<M: ModuleDef>(mut self) -> Self {
         self.module_sources.insert(M::name(), M::source);
@@ -73,10 +77,12 @@ impl Default for ModuleBuilder {
 }
 
 pub struct GlobalAttachment {
-    globals: Vec<Box<dyn Fn(&Ctx<'_>) -> Result<()>>>,
+    globals: Vec<InitFn>,
 }
 
 impl GlobalAttachment {
+    /// # Errors
+    /// Returns an error if module initialization fails
     pub fn attach(&self, ctx: &Ctx<'_>) -> Result<()> {
         for init in &self.globals {
             init(ctx)?;
@@ -148,7 +154,7 @@ impl Resolver for NodeResolver {
 fn try_resolve_file(path: &Path) -> Option<String> {
     // Try exact path only
     if path.exists() && path.is_file() {
-        return path.to_str().map(|s| s.to_string());
+        return path.to_str().map(std::string::ToString::to_string);
     }
 
     None
@@ -211,7 +217,7 @@ impl Resolver for BytecodeMapResolver {
                 if let Some(base_path_start) = base.rfind('/') {
                     let base_prefix = &base[..base_path_start]; // jsr:@scope/package@version
                     let relative_path = name.trim_start_matches("./").trim_end_matches(".js");
-                    let resolved_jsr = format!("{}/{}", base_prefix, relative_path);
+                    let resolved_jsr = format!("{base_prefix}/{relative_path}");
 
                     if self.bytecode_map.contains_key(&resolved_jsr) {
                         return Ok(resolved_jsr);
@@ -281,7 +287,10 @@ impl Loader for BytecodeMapLoader {
         let path = Path::new(name);
         if path.exists() && path.is_file() {
             // TypeScript files are not supported at runtime - they must be compiled first
-            if name.ends_with(".ts") {
+            if Path::new(name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("ts"))
+            {
                 return Err(Error::new_loading_message(
                     name,
                     "TypeScript files must be compiled first",
@@ -309,7 +318,10 @@ impl Loader for NodeLoader {
         let path = Path::new(name);
         if path.exists() && path.is_file() {
             // TypeScript files are not supported at runtime - they must be compiled first
-            if name.ends_with(".ts") {
+            if path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("ts"))
+            {
                 return Err(Error::new_loading_message(
                     name,
                     "TypeScript files must be compiled first",
@@ -373,7 +385,7 @@ impl Resolver for SourceMapResolver {
                 if let Some(base_path_start) = base.rfind('/') {
                     let base_prefix = &base[..base_path_start]; // jsr:@scope/package@version
                     let relative_path = name.trim_start_matches("./").trim_end_matches(".js");
-                    let resolved_jsr = format!("{}/{}", base_prefix, relative_path);
+                    let resolved_jsr = format!("{base_prefix}/{relative_path}");
 
                     if self.source_map.contains_key(&resolved_jsr) {
                         return Ok(resolved_jsr);
@@ -442,7 +454,10 @@ impl Loader for SourceMapLoader {
         let path = Path::new(name);
         if path.exists() && path.is_file() {
             // TypeScript files are not supported at runtime - they must be compiled first
-            if name.ends_with(".ts") {
+            if path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("ts"))
+            {
                 return Err(Error::new_loading_message(
                     name,
                     "TypeScript files must be compiled first",

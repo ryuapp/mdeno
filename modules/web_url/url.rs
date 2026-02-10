@@ -22,18 +22,12 @@ impl<'js> Url<'js> {
     pub fn new(ctx: Ctx<'js>, url: String, base: Opt<String>) -> rquickjs::Result<Self> {
         let base_ref = base.0.as_deref();
 
-        let inner = ada_url::Url::parse(&url, base_ref).map_err(|e| {
-            // Log detailed error to stderr for debugging
-            eprintln!(
-                "[ada-url Error] URL='{}', base={:?}, error={:?}",
-                url, base_ref, e
-            );
-            rquickjs::Error::new_from_js("url", "Invalid URL")
-        })?;
+        let inner = ada_url::Url::parse(&url, base_ref)
+            .map_err(|_| rquickjs::Error::new_from_js("url", "Invalid URL"))?;
 
         let inner_rc = Rc::new(RefCell::new(inner));
 
-        let params = UrlSearchParams::new_with_url(ctx.clone(), inner_rc.clone())?;
+        let params = UrlSearchParams::new_with_url(ctx.clone(), inner_rc.clone());
         let search_params = Class::instance(ctx, params)?;
 
         Ok(Self {
@@ -48,18 +42,16 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(set, rename = "href")]
-    pub fn set_href(&mut self, value: String) -> rquickjs::Result<()> {
-        let new_url = ada_url::Url::parse(&value, None).map_err(|e| {
-            eprintln!("[URL.href setter] input='{}', error={:?}", value, e);
-            rquickjs::Error::new_from_js("url", "Invalid URL")
-        })?;
+    pub fn set_href(&self, value: String) -> rquickjs::Result<()> {
+        let new_url = ada_url::Url::parse(&value, None)
+            .map_err(|_| rquickjs::Error::new_from_js("url", "Invalid URL"))?;
         *self.inner.borrow_mut() = new_url;
         Ok(())
     }
 
     #[qjs(get, rename = "origin")]
     pub fn get_origin(&self) -> String {
-        self.inner.borrow().origin().to_string()
+        self.inner.borrow().origin()
     }
 
     #[qjs(get, rename = "protocol")]
@@ -68,9 +60,9 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(set, rename = "protocol")]
-    pub fn set_protocol(&mut self, value: String) {
+    pub fn set_protocol(&self, value: String) {
         let scheme = value.trim_end_matches(':');
-        let _ = self.inner.borrow_mut().set_protocol(scheme);
+        self.inner.borrow_mut().set_protocol(scheme).ok();
     }
 
     #[qjs(get, rename = "username")]
@@ -79,8 +71,11 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(set, rename = "username")]
-    pub fn set_username(&mut self, value: String) {
-        let _ = self.inner.borrow_mut().set_username(Some(value.as_str()));
+    pub fn set_username(&self, value: String) {
+        self.inner
+            .borrow_mut()
+            .set_username(Some(value.as_str()))
+            .ok();
     }
 
     #[qjs(get, rename = "password")]
@@ -89,11 +84,14 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(set, rename = "password")]
-    pub fn set_password(&mut self, value: String) {
+    pub fn set_password(&self, value: String) {
         if value.is_empty() {
-            let _ = self.inner.borrow_mut().set_password(None);
+            self.inner.borrow_mut().set_password(None).ok();
         } else {
-            let _ = self.inner.borrow_mut().set_password(Some(value.as_str()));
+            self.inner
+                .borrow_mut()
+                .set_password(Some(value.as_str()))
+                .ok();
         }
     }
 
@@ -103,8 +101,8 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(set, rename = "host")]
-    pub fn set_host(&mut self, value: String) {
-        let _ = self.inner.borrow_mut().set_host(Some(value.as_str()));
+    pub fn set_host(&self, value: String) {
+        self.inner.borrow_mut().set_host(Some(value.as_str())).ok();
     }
 
     #[qjs(get, rename = "hostname")]
@@ -113,8 +111,11 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(set, rename = "hostname")]
-    pub fn set_hostname(&mut self, value: String) {
-        let _ = self.inner.borrow_mut().set_hostname(Some(value.as_str()));
+    pub fn set_hostname(&self, value: String) {
+        self.inner
+            .borrow_mut()
+            .set_hostname(Some(value.as_str()))
+            .ok();
     }
 
     #[qjs(get, rename = "port")]
@@ -123,11 +124,11 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(set, rename = "port")]
-    pub fn set_port(&mut self, value: String) {
+    pub fn set_port(&self, value: String) {
         if value.is_empty() {
-            let _ = self.inner.borrow_mut().set_port(None);
+            self.inner.borrow_mut().set_port(None).ok();
         } else {
-            let _ = self.inner.borrow_mut().set_port(Some(value.as_str()));
+            self.inner.borrow_mut().set_port(Some(value.as_str())).ok();
         }
     }
 
@@ -137,8 +138,11 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(set, rename = "pathname")]
-    pub fn set_pathname(&mut self, value: String) {
-        let _ = self.inner.borrow_mut().set_pathname(Some(value.as_str()));
+    pub fn set_pathname(&self, value: String) {
+        self.inner
+            .borrow_mut()
+            .set_pathname(Some(value.as_str()))
+            .ok();
     }
 
     #[qjs(get, rename = "search")]
@@ -147,12 +151,12 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(set, rename = "search")]
-    pub fn set_search(&mut self, value: String) {
+    pub fn set_search(&self, value: String) {
         let query = value.trim_start_matches('?');
         if query.is_empty() {
-            let _ = self.inner.borrow_mut().set_search(None);
+            self.inner.borrow_mut().set_search(None);
         } else {
-            let _ = self.inner.borrow_mut().set_search(Some(query));
+            self.inner.borrow_mut().set_search(Some(query));
         }
     }
 
@@ -162,12 +166,12 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(set, rename = "hash")]
-    pub fn set_hash(&mut self, value: String) {
+    pub fn set_hash(&self, value: String) {
         let fragment = value.trim_start_matches('#');
         if fragment.is_empty() {
-            let _ = self.inner.borrow_mut().set_hash(None);
+            self.inner.borrow_mut().set_hash(None);
         } else {
-            let _ = self.inner.borrow_mut().set_hash(Some(fragment));
+            self.inner.borrow_mut().set_hash(Some(fragment));
         }
     }
 
@@ -177,7 +181,7 @@ impl<'js> Url<'js> {
     }
 
     #[qjs(rename = "toString")]
-    pub fn to_string(&self) -> String {
+    pub fn url_to_string(&self) -> String {
         self.inner.borrow().href().to_string()
     }
 

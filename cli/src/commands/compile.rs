@@ -18,7 +18,7 @@ pub fn execute(file_path: &str, unstable: bool) -> Result<(), Box<dyn Error>> {
     if !absolute_file_path.exists() {
         // Convert to file:// URL for error message (like Deno)
         let file_url = to_file_url(&absolute_file_path);
-        return Err(format!("Module not found \"{}\".", file_url).into());
+        return Err(format!("Module not found \"{file_url}\".").into());
     }
 
     // Canonicalize the path (resolve symlinks, normalize ..)
@@ -34,7 +34,7 @@ pub fn execute(file_path: &str, unstable: bool) -> Result<(), Box<dyn Error>> {
         Ok(modules) => modules,
         Err(e) => {
             let error_chain = format_error_chain(e.as_ref());
-            return Err(format!("Import '{}' failed.{}", entry_file_url, error_chain).into());
+            return Err(format!("Import '{entry_file_url}' failed.{error_chain}").into());
         }
     };
 
@@ -46,7 +46,7 @@ pub fn execute(file_path: &str, unstable: bool) -> Result<(), Box<dyn Error>> {
     println!("Bundling {} modules...", modules.len());
 
     compile_modules_to_binary(&modules, &entry_file_url, output_name)?;
-    println!("Compiled {} to {}", file_path, output_name);
+    println!("Compiled {file_path} to {output_name}");
 
     Ok(())
 }
@@ -85,7 +85,7 @@ fn compile_modules_to_binary(
 
     // Output executable name
     let output_exe = if cfg!(windows) {
-        format!("{}.exe", output_name)
+        format!("{output_name}.exe")
     } else {
         output_name.to_string()
     };
@@ -126,8 +126,8 @@ fn compile_modules_to_binary(
     let file_size = fs::metadata(&output_exe)?.len();
     let size_mb = file_size as f64 / 1024.0 / 1024.0;
 
-    println!("Successfully created: {}", output_exe);
-    println!("Size: {:.2} MB", size_mb);
+    println!("Successfully created: {output_exe}");
+    println!("Size: {size_mb:.2} MB");
 
     Ok(())
 }

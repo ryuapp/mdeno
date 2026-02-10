@@ -48,6 +48,7 @@ pub fn transform(source: &str, filename: &str) -> Result<String, Box<dyn Error>>
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)] // Test code: unwrap is acceptable
 mod tests {
     use super::*;
 

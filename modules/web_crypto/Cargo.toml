@@ -10,3 +10,6 @@ path = "lib.rs"
 [dependencies]
 getrandom = "0.3.4"
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "macro"] }
+
+[lints]
+workspace = true

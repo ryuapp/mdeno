@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)] // Test code: unwrap is acceptable
+
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;

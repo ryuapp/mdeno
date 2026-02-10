@@ -1,5 +1,7 @@
 // Tests for JSR package resolution
 
+#![allow(clippy::unwrap_used)] // Test code: unwrap is acceptable
+
 use mdeno::jsr::JsrResolver;
 
 #[test]

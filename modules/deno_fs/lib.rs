@@ -138,21 +138,16 @@ impl<'js> rquickjs::FromJs<'js> for MakeTempOptions {
     }
 }
 
+/// # Errors
+/// Returns an error if module initialization fails
 pub fn init(ctx: &Ctx<'_>) -> QuickResult<()> {
     // Ensure the internal symbol object and nested fs object exist
     ctx.eval::<(), _>("globalThis[Symbol.for('mdeno.internal')] ||= {}; globalThis[Symbol.for('mdeno.internal')].fs ||= {};")?;
 
-    setup_internal(ctx).map_err(|e| {
-        eprintln!("deno_fs setup_internal error: {}", e);
-        rquickjs::Error::Unknown
-    })?;
+    setup_internal(ctx).map_err(|_| rquickjs::Error::Unknown)?;
 
     // Register fs APIs under __mdeno__.fs as a module
-    let module =
-        Module::evaluate(ctx.clone(), "deno_fs", include_str!("deno_fs.js")).map_err(|e| {
-            eprintln!("deno_fs.js eval error: {:?}", e);
-            e
-        })?;
+    let module = Module::evaluate(ctx.clone(), "deno_fs", include_str!("deno_fs.js"))?;
     module.finish::<()>()?;
 
     Ok(())
@@ -166,12 +161,12 @@ fn fs_cwd() -> JsResult<String> {
 }
 
 fn fs_read_file_sync(path: String) -> JsResult<Vec<u8>> {
-    let result: DenoResult<Vec<u8>> = fs::read(&path).map_err(|e| e.into());
+    let result: DenoResult<Vec<u8>> = fs::read(&path).map_err(std::convert::Into::into);
     result.into()
 }
 
 fn fs_read_text_file_sync(path: String) -> JsResult<String> {
-    let result: DenoResult<String> = fs::read_to_string(&path).map_err(|e| e.into());
+    let result: DenoResult<String> = fs::read_to_string(&path).map_err(std::convert::Into::into);
     result.into()
 }
 
@@ -180,6 +175,7 @@ fn fs_write_file_sync(
     data: Vec<u8>,
     options: Option<WriteFileOptions>,
 ) -> JsResult<()> {
+    use std::io::Write;
     let result: DenoResult<()> = (|| {
         let opts = options.unwrap_or_default();
 
@@ -192,7 +188,6 @@ fn fs_write_file_sync(
                 .create(opts.create)
                 .append(true)
                 .open(&path)?;
-            use std::io::Write;
             file.write_all(&data)?;
         } else {
             fs::write(&path, &data)?;
@@ -207,6 +202,7 @@ fn fs_write_text_file_sync(
     text: String,
     options: Option<WriteFileOptions>,
 ) -> JsResult<()> {
+    use std::io::Write;
     let result: DenoResult<()> = (|| {
         let opts = options.unwrap_or_default();
 
@@ -219,7 +215,6 @@ fn fs_write_text_file_sync(
                 .create(opts.create)
                 .append(true)
                 .open(&path)?;
-            use std::io::Write;
             file.write_all(text.as_bytes())?;
         } else {
             fs::write(&path, &text)?;
@@ -463,12 +458,12 @@ fn build_file_info(metadata: &fs::Metadata) -> FileInfo {
         {
             // On Windows, try to get creation time if available
             use std::os::windows::fs::MetadataExt;
-            let ct = metadata.creation_time();
             // Windows FILETIME is in 100-nanosecond intervals since 1601-01-01
             // Convert to milliseconds since Unix epoch (1970-01-01)
             // Matches Deno's windows_time_to_unix_time_msec implementation
             const WINDOWS_TICK: u64 = 10_000; // 100-nanosecond intervals per millisecond
             const SEC_TO_UNIX_EPOCH: u64 = 11_644_473_600; // Seconds between 1601 and 1970
+            let ct = metadata.creation_time();
 
             if ct > 0 {
                 let milliseconds_since_windows_epoch = ct / WINDOWS_TICK;

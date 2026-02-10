@@ -39,3 +39,37 @@ tempfile = "3.24.0"
 default = ["native-tls"]
 native-tls = ["mdeno_runtime/native-tls"]
 rustls = ["mdeno_runtime/rustls"]
+
+[lints.clippy]
+# Enable all lint groups
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# Panic prevention (deny in production code)
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_in_result = "deny"
+
+# Debug artifacts
+dbg_macro = "deny"
+print_stdout = "allow" # CLI tool: intentional output
+print_stderr = "allow" # CLI tool: intentional output
+
+# Restriction lints
+exit = "allow" # CLI tool: intentional exit
+
+# Allow pedantic lints that are too noisy
+must_use_candidate = "allow"
+too_many_lines = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+needless_pass_by_value = "allow"
+
+# Allow cargo lints for transitive dependencies
+multiple_crate_versions = "allow"

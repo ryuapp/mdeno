@@ -21,3 +21,5 @@ serde_json = { version = "1.0.148" }
 ada-url = "3.3.0"
 utils = { path = "../utils" }
 
+[lints]
+workspace = true

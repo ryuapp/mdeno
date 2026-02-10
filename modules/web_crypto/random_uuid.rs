@@ -1,20 +1,19 @@
 // Copyright 2018-2025 the Deno authors. MIT license.
 
-/// Deno's fast_uuid_v4 implementation
+// Hex lookup table
+const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+
+/// Deno's `fast_uuid_v4` implementation
 /// Converts 16 random bytes into a UUID v4 string
 fn fast_uuid_v4(rng_bytes: &mut [u8; 16]) -> String {
     // Set version (4) and variant (RFC4122) bits
     rng_bytes[6] = (rng_bytes[6] & 0x0f) | 0x40;
     rng_bytes[8] = (rng_bytes[8] & 0x3f) | 0x80;
 
-    // Hex lookup table
-    const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
-
     // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
     let mut buf = [0u8; 36];
 
-    for i in 0..16 {
-        let byte = rng_bytes[i];
+    for (i, &byte) in rng_bytes.iter().enumerate() {
         let pos = i * 2
             + if i >= 10 {
                 4
@@ -22,10 +21,8 @@ fn fast_uuid_v4(rng_bytes: &mut [u8; 16]) -> String {
                 3
             } else if i >= 6 {
                 2
-            } else if i >= 4 {
-                1
             } else {
-                0
+                usize::from(i >= 4)
             };
         buf[pos] = HEX_CHARS[(byte >> 4) as usize];
         buf[pos + 1] = HEX_CHARS[(byte & 0x0f) as usize];
@@ -41,6 +38,10 @@ fn fast_uuid_v4(rng_bytes: &mut [u8; 16]) -> String {
 }
 
 /// Generate UUID v4 string
+///
+/// # Panics
+/// Panics if the system's random number generator fails
+#[allow(clippy::expect_used)] // Intentional: RNG failure should panic
 pub fn random_uuid() -> String {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).expect("Failed to get random bytes");
@@ -48,6 +49,7 @@ pub fn random_uuid() -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)] // Test code: unwrap is acceptable
 mod tests {
     use super::*;
 

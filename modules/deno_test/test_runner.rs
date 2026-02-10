@@ -3,7 +3,7 @@
 use crate::test_context::TestContext;
 use rquickjs::{Ctx, Function, Object, Result, Value};
 
-fn get_test_context<'js>(ctx: &Ctx<'js>) -> Result<TestContext> {
+fn get_test_context(ctx: &Ctx<'_>) -> Result<TestContext> {
     let globals = ctx.globals();
     let symbol_ctor: Function = globals.get("Symbol")?;
     let symbol_for: Function = symbol_ctor.get("for")?;
@@ -23,20 +23,20 @@ pub fn deno_test<'js>(
 }
 
 #[rquickjs::function]
-pub fn run_tests<'js>(ctx: Ctx<'js>) -> Result<Value<'js>> {
+pub fn run_tests(ctx: Ctx<'_>) -> Result<Value<'_>> {
     let test_context = get_test_context(&ctx)?;
     test_context.run_all(ctx)
 }
 
 #[rquickjs::function]
-pub fn set_test_filename<'js>(ctx: Ctx<'js>, filename: String) -> Result<()> {
+pub fn set_test_filename(ctx: Ctx<'_>, filename: String) -> Result<()> {
     let test_context = get_test_context(&ctx)?;
     test_context.set_filename(filename);
     Ok(())
 }
 
 #[rquickjs::function]
-pub fn resolve_pending<'js>(ctx: Ctx<'js>) -> Result<Value<'js>> {
+pub fn resolve_pending(ctx: Ctx<'_>) -> Result<Value<'_>> {
     let test_context = get_test_context(&ctx)?;
     test_context.resolve_pending(ctx)
 }

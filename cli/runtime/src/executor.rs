@@ -1,4 +1,6 @@
 // Executor functions for running JS code and bytecode
+#![allow(clippy::exit)] // Executor needs to exit process on errors
+#![allow(clippy::print_stderr)] // Executor prints errors to stderr
 
 use crate::common::{BytecodeBundle, handle_error, setup_extensions};
 use crate::module_builder;
@@ -6,9 +8,9 @@ use rquickjs::{AsyncContext, AsyncRuntime, CatchResultExt, Module, async_with};
 use std::error::Error;
 use std::sync::Arc;
 
-/// Execute an async block and drive all futures with runtime.idle()
+/// Execute an async block and drive all futures with `runtime.idle()`
 /// This is a helper to ensure consistent behavior across all execution paths.
-/// The closure should contain the async_with! block.
+/// The closure should contain the `async_with`! block.
 pub async fn execute_with_idle<F, Fut>(runtime: &AsyncRuntime, f: F) -> Result<(), Box<dyn Error>>
 where
     F: FnOnce() -> Fut,
@@ -25,7 +27,7 @@ where
 }
 
 /// Common runtime setup for all execution modes
-/// Returns (runtime, context, module_registry)
+/// Returns (runtime, context, `module_registry`)
 pub async fn setup_runtime_with_loader() -> Result<
     (
         AsyncRuntime,
@@ -83,6 +85,12 @@ pub async fn execute_pending_jobs_loop(
     Ok(())
 }
 
+/// # Errors
+/// Returns an error if execution fails
+///
+/// # Panics
+/// Panics if JavaScript execution fails with an exception
+#[allow(clippy::unwrap_used)] // Intentional: process exits on JS errors
 pub fn run_js_code_with_path(js_code: &str, file_path: &str) -> Result<(), Box<dyn Error>> {
     let compio_runtime = compio_runtime::Runtime::new()?;
     compio_runtime.block_on(async {
@@ -128,12 +136,11 @@ async fn cleanup_test_context_sync(context: &AsyncContext) -> Result<(), Box<dyn
                 let internal_symbol: Result<Value, _> = symbol_for.call(("mdeno.internal",));
                 if let Ok(internal_symbol) = internal_symbol {
                     let internal: Result<Object, _> = globals.get(internal_symbol);
-                    if let Ok(internal) = internal {
-                        if let Ok(test_context) = internal.get::<_, deno_test::TestContext>("testContext") {
+                    if let Ok(internal) = internal
+                        && let Ok(test_context) = internal.get::<_, deno_test::TestContext>("testContext") {
                             test_context.cleanup();
                             let _ = internal.remove("testContext");
                         }
-                    }
                 }
             }
         }
@@ -141,21 +148,25 @@ async fn cleanup_test_context_sync(context: &AsyncContext) -> Result<(), Box<dyn
     }).await
 }
 
+/// # Errors
+/// Returns an error if execution fails
 pub fn run_bytecode(bytecode: &[u8]) -> Result<(), Box<dyn Error>> {
     // Try to deserialize as bytecode bundle first
-    match rkyv::from_bytes::<BytecodeBundle, rkyv::rancor::Error>(bytecode) {
-        Ok(bundle) => {
-            return run_bytecode_bundle(bundle);
-        }
-        Err(_) => {
-            // Fall back to single module bytecode
-        }
+    if let Ok(bundle) = rkyv::from_bytes::<BytecodeBundle, rkyv::rancor::Error>(bytecode) {
+        return run_bytecode_bundle(bundle);
     }
+    // Fall back to single module bytecode
 
     // Fall back to single module bytecode
     run_bytecode_with_loader(bytecode, true)
 }
 
+/// # Errors
+/// Returns an error if execution fails
+///
+/// # Panics
+/// Panics if bytecode module evaluation fails with an exception
+#[allow(clippy::unwrap_used)] // Intentional: process exits on bytecode errors
 pub fn run_bytecode_bundle(bundle: BytecodeBundle) -> Result<(), Box<dyn Error>> {
     use module_builder::ModuleBuilder;
 
@@ -204,8 +215,9 @@ pub fn run_bytecode_bundle(bundle: BytecodeBundle) -> Result<(), Box<dyn Error>>
                                         error_msg.push_str(&stack);
                                     }
                                 }
-                                _ => {
-                                    error_msg.push_str(&format!("{:?}", e));
+                                rquickjs::CaughtError::Error(_) | rquickjs::CaughtError::Value(_) => {
+                                    use std::fmt::Write;
+                                    let _ = write!(error_msg, "{e:?}");
                                 }
                             }
                             error_msg
@@ -235,6 +247,12 @@ pub fn run_bytecode_bundle(bundle: BytecodeBundle) -> Result<(), Box<dyn Error>>
     })
 }
 
+/// # Errors
+/// Returns an error if execution fails
+///
+/// # Panics
+/// Panics if bytecode module evaluation fails with an exception
+#[allow(clippy::unwrap_used)] // Intentional: process exits on bytecode errors
 pub fn run_bytecode_with_loader(
     bytecode: &[u8],
     enable_loader: bool,

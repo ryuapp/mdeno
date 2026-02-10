@@ -19,9 +19,11 @@ pub enum Command {
     Test,
 }
 
+/// # Errors
+/// Returns an error if argument parsing fails
 pub fn parse_args(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
     let args_clone = args.clone();
-    let raw = RawArgs::new(args.into_iter());
+    let raw = RawArgs::new(args);
     let mut cursor = raw.cursor();
     raw.next(&mut cursor); // skip program name
 
@@ -47,10 +49,10 @@ pub fn parse_args(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
                 "eval" => {
                     command = Command::Eval;
                     // Next argument should be the code
-                    if let Some(code_arg) = raw.next(&mut cursor) {
-                        if let Ok(code_value) = code_arg.to_value() {
-                            code = Some(code_value.to_string());
-                        }
+                    if let Some(code_arg) = raw.next(&mut cursor)
+                        && let Ok(code_value) = code_arg.to_value()
+                    {
+                        code = Some(code_value.to_string());
                     }
                     break;
                 }
@@ -105,9 +107,9 @@ pub fn parse_args(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
 
     let target = file_path.as_ref().or(code.as_ref());
 
-    for arg in args_clone.iter() {
+    for arg in &args_clone {
         if found_target {
-            script_args.push(arg.to_string());
+            script_args.push(arg.clone());
         } else if Some(arg) == target {
             found_target = true;
         }

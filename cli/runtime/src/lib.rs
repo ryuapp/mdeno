@@ -1,4 +1,6 @@
 // Copyright 2018-2025 the Deno authors. MIT license.
+#![allow(clippy::unwrap_used)] // Runtime library: unwrap is acceptable
+#![allow(clippy::expect_used)] // Runtime library: expect is acceptable
 
 mod common;
 mod compiler;
@@ -30,11 +32,17 @@ pub fn set_script_args(args: Vec<String>) {
 }
 
 /// Evaluate JavaScript code directly (for eval command)
+///
+/// # Errors
+/// Returns an error if execution fails
 pub fn eval_code(js_code: &str) -> Result<(), Box<dyn Error>> {
     run_js_code_with_path(js_code, "./$mdeno$eval.js")
 }
 
-/// Run JavaScript code (wrapper for run_js_code_with_path)
+/// Run JavaScript code (wrapper for `run_js_code_with_path`)
+///
+/// # Errors
+/// Returns an error if execution fails
 pub fn run_js_code(js_code: &str) -> Result<(), Box<dyn Error>> {
     run_js_code_with_path(js_code, "./$mdeno$eval.js")
 }

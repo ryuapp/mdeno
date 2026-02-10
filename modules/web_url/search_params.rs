@@ -9,32 +9,32 @@ pub struct UrlSearchParams {
 }
 
 impl Trace<'_> for UrlSearchParams {
-    fn trace<'a, 'js>(&self, _tracer: rquickjs::class::Tracer<'a, 'js>) {}
+    fn trace(&self, _tracer: rquickjs::class::Tracer<'_, '_>) {}
 }
 
 // Internal methods (not exposed to JavaScript)
 impl UrlSearchParams {
-    pub fn new_with_url<'js>(
-        _ctx: Ctx<'js>,
-        url: Rc<RefCell<ada_url::Url>>,
-    ) -> rquickjs::Result<Self> {
-        Ok(Self { url })
+    pub fn new_with_url(_ctx: Ctx<'_>, url: Rc<RefCell<ada_url::Url>>) -> Self {
+        Self { url }
     }
 
     fn get_params(&self) -> ada_url::UrlSearchParams {
         let search = self.url.borrow().search().to_string();
         let query = search.strip_prefix('?').unwrap_or(&search);
         ada_url::UrlSearchParams::parse(query).unwrap_or_else(|_| {
-            ada_url::UrlSearchParams::parse("").expect("Empty params should always parse")
+            // If parsing fails, return empty params. Unwrap is safe because empty string always parses.
+            #[allow(clippy::expect_used)]
+            ada_url::UrlSearchParams::parse("")
+                .expect("Empty URLSearchParams should always parse successfully")
         })
     }
 
     fn set_params(&self, params: &ada_url::UrlSearchParams) {
         let search_str = params.to_string();
         if search_str.is_empty() {
-            let _ = self.url.borrow_mut().set_search(None);
+            self.url.borrow_mut().set_search(None);
         } else {
-            let _ = self.url.borrow_mut().set_search(Some(&search_str));
+            self.url.borrow_mut().set_search(Some(&search_str));
         }
     }
 }
@@ -43,25 +43,18 @@ impl UrlSearchParams {
 impl<'js> UrlSearchParams {
     #[qjs(constructor)]
     pub fn new(_ctx: Ctx<'js>, init: Opt<Value<'js>>) -> rquickjs::Result<Self> {
-        let dummy_url =
-            ada_url::Url::parse("http://example.com", None).expect("Dummy URL should always parse");
+        let dummy_url = ada_url::Url::parse("http://example.com", None)
+            .map_err(|_| rquickjs::Error::new_from_js("url", "Failed to create URLSearchParams"))?;
         let url = Rc::new(RefCell::new(dummy_url));
 
-        let mut params = ada_url::UrlSearchParams::parse("").map_err(|e| {
-            eprintln!("[URLSearchParams constructor] empty init error={:?}", e);
-            rquickjs::Error::new_from_js("url", "Invalid search params")
-        })?;
+        let mut params = ada_url::UrlSearchParams::parse("")
+            .map_err(|_| rquickjs::Error::new_from_js("url", "Invalid search params"))?;
 
         if let Some(value) = init.0 {
             if let Some(query) = value.as_string() {
                 let query_str = query.to_string()?;
-                params = ada_url::UrlSearchParams::parse(&query_str).map_err(|e| {
-                    eprintln!(
-                        "[URLSearchParams constructor] string input='{}', error={:?}",
-                        query_str, e
-                    );
-                    rquickjs::Error::new_from_js("url", "Invalid search params")
-                })?;
+                params = ada_url::UrlSearchParams::parse(&query_str)
+                    .map_err(|_| rquickjs::Error::new_from_js("url", "Invalid search params"))?;
             } else if let Some(array) = value.as_array() {
                 for i in 0..array.len() {
                     let entry: Value = array.get(i)?;
@@ -98,13 +91,8 @@ impl<'js> UrlSearchParams {
                         )
                     })?
                     .to_string()?;
-                params = ada_url::UrlSearchParams::parse(&query_str).map_err(|e| {
-                    eprintln!(
-                        "[URLSearchParams constructor] fallback string input='{}', error={:?}",
-                        query_str, e
-                    );
-                    rquickjs::Error::new_from_js("url", "Invalid search params")
-                })?;
+                params = ada_url::UrlSearchParams::parse(&query_str)
+                    .map_err(|_| rquickjs::Error::new_from_js("url", "Invalid search params"))?;
             }
         }
 
@@ -119,13 +107,13 @@ impl<'js> UrlSearchParams {
         self.get_params().entries().count()
     }
 
-    pub fn append(&mut self, key: String, value: String) {
+    pub fn append(&self, key: String, value: String) {
         let mut params = self.get_params();
         params.append(&key, &value);
         self.set_params(&params);
     }
 
-    pub fn delete(&mut self, key: String, value: Opt<String>) {
+    pub fn delete(&self, key: String, value: Opt<String>) {
         let mut params = self.get_params();
         if let Some(val) = value.0 {
             params.remove(&key, &val);
@@ -166,13 +154,13 @@ impl<'js> UrlSearchParams {
         }
     }
 
-    pub fn set(&mut self, key: String, value: String) {
+    pub fn set(&self, key: String, value: String) {
         let mut params = self.get_params();
         params.set(&key, &value);
         self.set_params(&params);
     }
 
-    pub fn sort(&mut self) {
+    pub fn sort(&self) {
         let mut params = self.get_params();
         params.sort();
         self.set_params(&params);
@@ -187,7 +175,7 @@ impl<'js> UrlSearchParams {
     ) -> rquickjs::Result<()> {
         let this = this_arg
             .0
-            .unwrap_or(rquickjs::Value::new_undefined(ctx.clone()));
+            .unwrap_or_else(|| rquickjs::Value::new_undefined(ctx.clone()));
 
         for (key, value) in self.get_params().entries() {
             let _: () = callback.call((This(this.clone()), value.to_string(), key.to_string()))?;
@@ -197,7 +185,7 @@ impl<'js> UrlSearchParams {
     }
 
     #[qjs(rename = "toString")]
-    pub fn to_string(&self) -> String {
+    pub fn params_to_string(&self) -> String {
         self.get_params().to_string()
     }
 

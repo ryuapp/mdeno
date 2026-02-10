@@ -5,7 +5,14 @@ use rquickjs::{Ctx, JsLifetime, Object, Result, TypedArray, class::Trace};
 #[rquickjs::class]
 pub struct TextEncoder {}
 
+impl Default for TextEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[rquickjs::methods]
+#[allow(clippy::unused_self)] // JavaScript object methods require &self
 impl TextEncoder {
     #[qjs(constructor)]
     pub fn new() -> Self {
@@ -24,7 +31,7 @@ impl TextEncoder {
         TypedArray::new(ctx, bytes)
     }
 
-    /// Encode a string into a provided Uint8Array buffer
+    /// Encode a string into a provided `Uint8Array` buffer
     /// Returns {read, written} where read is the number of UTF-16 code units read
     /// and written is the number of bytes written
     #[qjs(rename = "encodeInto")]
@@ -42,8 +49,8 @@ impl TextEncoder {
         let to_write = bytes.len().min(dest_len);
 
         // Write bytes to destination one by one
-        for i in 0..to_write {
-            destination.set(i as u32, bytes[i])?;
+        for (i, &byte) in bytes.iter().enumerate().take(to_write) {
+            destination.set(i as u32, byte)?;
         }
 
         // Calculate how many UTF-16 code units were read

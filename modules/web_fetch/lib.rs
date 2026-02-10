@@ -10,6 +10,8 @@ use rquickjs::{
     function::{Async, Func},
 };
 
+/// # Errors
+/// Returns an error if module initialization fails
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     // Register Headers class
     Class::<Headers>::define(&ctx.globals())?;

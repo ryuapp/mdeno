@@ -2,7 +2,7 @@ use crate::jsr::JsrResolver;
 use crate::strip_types::transform;
 use mdeno_path_util::to_file_url;
 use oxc_allocator::Allocator;
-use oxc_ast::ast::*;
+use oxc_ast::ast::Statement;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use std::collections::{HashMap, HashSet};
@@ -31,6 +31,8 @@ impl ModuleBundler {
         self.unstable
     }
 
+    /// # Errors
+    /// Returns an error if bundling fails
     pub fn bundle(&mut self, entry_path: &str) -> Result<HashMap<String, String>, Box<dyn Error>> {
         // entry_path should already be an absolute canonical path
         self.process_module(entry_path)?;
@@ -41,7 +43,7 @@ impl ModuleBundler {
     fn process_module(&mut self, module_path: &str) -> Result<(), Box<dyn Error>> {
         // Convert file path to file:// URL for map key
         let file_url = to_file_url(Path::new(module_path));
-        return self.process_module_with_key(module_path, &file_url);
+        self.process_module_with_key(module_path, &file_url)
     }
 
     fn process_module_with_key(
@@ -58,14 +60,17 @@ impl ModuleBundler {
         let source = fs::read_to_string(module_path)?;
 
         // Strip TypeScript if .ts file (JSR modules are already stripped)
-        let js_source = if module_path.ends_with(".ts") {
+        let js_source = if Path::new(module_path)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("ts"))
+        {
             transform(&source, module_path)?
         } else {
             source
         };
 
         // Parse to extract imports
-        let imports = self.extract_imports(&js_source, module_path)?;
+        let imports = Self::extract_imports(&js_source, module_path);
 
         // Store this module with the specified key
         self.modules.insert(map_key.to_string(), js_source);
@@ -85,14 +90,14 @@ impl ModuleBundler {
             } else if import_path.starts_with("jsr:") {
                 if !self.unstable {
                     return Err(
-                        format!("JSR imports require --unstable flag: {}", import_path).into(),
+                        format!("JSR imports require --unstable flag: {import_path}").into(),
                     );
                 }
                 // Resolve JSR imports - returns HashMap<jsr_specifier, cache_path>
                 let resolved_modules = self
                     .jsr_resolver
                     .resolve(&import_path)
-                    .map_err(|e| format!("Failed to resolve JSR import {}: {}", import_path, e))?;
+                    .map_err(|e| format!("Failed to resolve JSR import {import_path}: {e}"))?;
 
                 // Add all resolved JSR modules to the bundle
                 for (jsr_spec, cache_path) in resolved_modules {
@@ -114,13 +119,13 @@ impl ModuleBundler {
         Ok(())
     }
 
-    fn extract_imports(&self, source: &str, filename: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    fn extract_imports(source: &str, filename: &str) -> Vec<String> {
         let allocator = Allocator::default();
         let source_type = SourceType::from_path(Path::new(filename)).unwrap_or_default();
 
         let parser_ret = Parser::new(&allocator, source, source_type).parse();
         if !parser_ret.errors.is_empty() {
-            return Ok(Vec::new()); // Skip parse errors
+            return Vec::new(); // Skip parse errors
         }
 
         let mut imports = Vec::new();
@@ -144,6 +149,6 @@ impl ModuleBundler {
             }
         }
 
-        Ok(imports)
+        imports
     }
 }

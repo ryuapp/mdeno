@@ -13,18 +13,24 @@ concurrency:
   cancel-in-progress: ${{ github.ref_name != 'main' }}
 
 jobs:
-  format:
-    name: Format
+  ci:
+    name: Format & Lint
     runs-on: ubuntu-latest
     permissions: {}
     steps:
       - uses: actions/checkout@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: denoland/setup-deno@v2
         with:
           cache: true
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: deno task check:format
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   build:
     name: Build

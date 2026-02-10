@@ -1,20 +1,20 @@
 // Runtime-only binary for standalone executables
+
 use std::error::Error;
 use utils::SECTION_NAME;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn Error>> {
     // Extract embedded bytecode
-    let bytecode = match libsui::find_section(SECTION_NAME) {
-        Ok(Some(data)) => data.to_vec(),
-        Ok(None) => {
-            eprintln!("Error: No embedded bytecode found");
-            std::process::exit(1);
-        }
-        Err(e) => {
-            eprintln!("Error: Failed to read embedded bytecode: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let bytecode = libsui::find_section(SECTION_NAME)?
+        .ok_or("No embedded bytecode found")?
+        .to_vec();
 
     // Run the bytecode
     mdeno_runtime::run_bytecode(&bytecode)?;
