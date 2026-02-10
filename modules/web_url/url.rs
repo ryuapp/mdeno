@@ -6,7 +6,7 @@ use std::rc::Rc;
 #[derive(Clone, JsLifetime)]
 #[rquickjs::class(rename = "URL")]
 pub struct Url<'js> {
-    inner: Rc<RefCell<ada_url::Url>>,
+    inner: Rc<RefCell<ars::Url>>,
     search_params: Class<'js, UrlSearchParams>,
 }
 
@@ -22,7 +22,7 @@ impl<'js> Url<'js> {
     pub fn new(ctx: Ctx<'js>, url: String, base: Opt<String>) -> rquickjs::Result<Self> {
         let base_ref = base.0.as_deref();
 
-        let inner = ada_url::Url::parse(&url, base_ref)
+        let inner = ars::Url::parse(&url, base_ref)
             .map_err(|_| rquickjs::Error::new_from_js("url", "Invalid URL"))?;
 
         let inner_rc = Rc::new(RefCell::new(inner));
@@ -43,7 +43,7 @@ impl<'js> Url<'js> {
 
     #[qjs(set, rename = "href")]
     pub fn set_href(&self, value: String) -> rquickjs::Result<()> {
-        let new_url = ada_url::Url::parse(&value, None)
+        let new_url = ars::Url::parse(&value, None)
             .map_err(|_| rquickjs::Error::new_from_js("url", "Invalid URL"))?;
         *self.inner.borrow_mut() = new_url;
         Ok(())
@@ -62,7 +62,7 @@ impl<'js> Url<'js> {
     #[qjs(set, rename = "protocol")]
     pub fn set_protocol(&self, value: String) {
         let scheme = value.trim_end_matches(':');
-        self.inner.borrow_mut().set_protocol(scheme).ok();
+        self.inner.borrow_mut().set_protocol(scheme);
     }
 
     #[qjs(get, rename = "username")]
@@ -72,10 +72,7 @@ impl<'js> Url<'js> {
 
     #[qjs(set, rename = "username")]
     pub fn set_username(&self, value: String) {
-        self.inner
-            .borrow_mut()
-            .set_username(Some(value.as_str()))
-            .ok();
+        self.inner.borrow_mut().set_username(&value);
     }
 
     #[qjs(get, rename = "password")]
@@ -85,14 +82,7 @@ impl<'js> Url<'js> {
 
     #[qjs(set, rename = "password")]
     pub fn set_password(&self, value: String) {
-        if value.is_empty() {
-            self.inner.borrow_mut().set_password(None).ok();
-        } else {
-            self.inner
-                .borrow_mut()
-                .set_password(Some(value.as_str()))
-                .ok();
-        }
+        self.inner.borrow_mut().set_password(&value);
     }
 
     #[qjs(get, rename = "host")]
@@ -102,7 +92,7 @@ impl<'js> Url<'js> {
 
     #[qjs(set, rename = "host")]
     pub fn set_host(&self, value: String) {
-        self.inner.borrow_mut().set_host(Some(value.as_str())).ok();
+        self.inner.borrow_mut().set_host(&value);
     }
 
     #[qjs(get, rename = "hostname")]
@@ -112,10 +102,7 @@ impl<'js> Url<'js> {
 
     #[qjs(set, rename = "hostname")]
     pub fn set_hostname(&self, value: String) {
-        self.inner
-            .borrow_mut()
-            .set_hostname(Some(value.as_str()))
-            .ok();
+        self.inner.borrow_mut().set_hostname(&value);
     }
 
     #[qjs(get, rename = "port")]
@@ -125,11 +112,7 @@ impl<'js> Url<'js> {
 
     #[qjs(set, rename = "port")]
     pub fn set_port(&self, value: String) {
-        if value.is_empty() {
-            self.inner.borrow_mut().set_port(None).ok();
-        } else {
-            self.inner.borrow_mut().set_port(Some(value.as_str())).ok();
-        }
+        self.inner.borrow_mut().set_port(&value);
     }
 
     #[qjs(get, rename = "pathname")]
@@ -139,10 +122,7 @@ impl<'js> Url<'js> {
 
     #[qjs(set, rename = "pathname")]
     pub fn set_pathname(&self, value: String) {
-        self.inner
-            .borrow_mut()
-            .set_pathname(Some(value.as_str()))
-            .ok();
+        self.inner.borrow_mut().set_pathname(&value);
     }
 
     #[qjs(get, rename = "search")]
@@ -153,11 +133,7 @@ impl<'js> Url<'js> {
     #[qjs(set, rename = "search")]
     pub fn set_search(&self, value: String) {
         let query = value.trim_start_matches('?');
-        if query.is_empty() {
-            self.inner.borrow_mut().set_search(None);
-        } else {
-            self.inner.borrow_mut().set_search(Some(query));
-        }
+        self.inner.borrow_mut().set_search(query);
     }
 
     #[qjs(get, rename = "hash")]
@@ -168,11 +144,7 @@ impl<'js> Url<'js> {
     #[qjs(set, rename = "hash")]
     pub fn set_hash(&self, value: String) {
         let fragment = value.trim_start_matches('#');
-        if fragment.is_empty() {
-            self.inner.borrow_mut().set_hash(None);
-        } else {
-            self.inner.borrow_mut().set_hash(Some(fragment));
-        }
+        self.inner.borrow_mut().set_hash(fragment);
     }
 
     #[qjs(get, rename = "searchParams")]
@@ -205,6 +177,6 @@ impl<'js> Url<'js> {
     #[qjs(static, rename = "canParse")]
     pub fn can_parse(_ctx: Ctx<'js>, url: String, base: Opt<String>) -> bool {
         let base_ref = base.0.as_deref();
-        ada_url::Url::parse(&url, base_ref).is_ok()
+        ars::Url::parse(&url, base_ref).is_ok()
     }
 }

@@ -9,7 +9,7 @@ path = "lib.rs"
 
 [dependencies]
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader", "macro"] }
-ada-url = "3.3.0"
+ars = "0.0.2"
 
 [lints]
 workspace = true
