@@ -122,7 +122,7 @@ impl<'js> UrlSearchParams {
 
         for i in 0..entry.len() {
             if let Some(value) = entry.get(i) {
-                array.set(i, value.to_string())?;
+                array.set(i, *value)?;
             }
         }
 
@@ -180,7 +180,7 @@ impl<'js> UrlSearchParams {
     pub fn values(&self, ctx: Ctx<'js>) -> rquickjs::Result<rquickjs::Array<'js>> {
         let array = rquickjs::Array::new(ctx.clone())?;
         for (i, value) in self.get_params().values().enumerate() {
-            array.set(i, value.to_string())?;
+            array.set(i, value)?;
         }
         Ok(array)
     }
