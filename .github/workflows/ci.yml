@@ -67,14 +67,10 @@ jobs:
         with:
           cache: true
 
-      - name: Setup musl toolchain
-        if: endsWith(matrix.target, '-musl')
-        uses: ./.github/actions/setup-musl-toolchain
+      - name: Setup cross-compilation toolchain
+        uses: taiki-e/setup-cross-toolchain-action@v1
         with:
           target: ${{ matrix.target }}
-
-      - name: Add target
-        run: rustup target add ${{ matrix.target }}
       - name: Build
         run: deno task build --target ${{ matrix.target }}
       - name: Test

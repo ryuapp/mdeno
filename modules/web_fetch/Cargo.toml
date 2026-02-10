@@ -18,7 +18,7 @@ cyper = { version = "=0.7.1", default-features = false }
 compio-tls = { version = "0.8.0", default-features = false, optional = true }
 once_cell = { version = "1.21.3" }
 serde_json = { version = "1.0.148" }
-ada-url = "3.3.0"
+ars = "0.0.2"
 utils = { path = "../utils" }
 
 [lints]

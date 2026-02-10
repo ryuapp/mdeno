@@ -5,7 +5,7 @@ use std::rc::Rc;
 #[derive(JsLifetime)]
 #[rquickjs::class(rename = "URLSearchParams")]
 pub struct UrlSearchParams {
-    url: Rc<RefCell<ada_url::Url>>,
+    url: Rc<RefCell<ars::Url>>,
 }
 
 impl Trace<'_> for UrlSearchParams {
@@ -14,28 +14,19 @@ impl Trace<'_> for UrlSearchParams {
 
 // Internal methods (not exposed to JavaScript)
 impl UrlSearchParams {
-    pub fn new_with_url(_ctx: Ctx<'_>, url: Rc<RefCell<ada_url::Url>>) -> Self {
+    pub fn new_with_url(_ctx: Ctx<'_>, url: Rc<RefCell<ars::Url>>) -> Self {
         Self { url }
     }
 
-    fn get_params(&self) -> ada_url::UrlSearchParams {
+    fn get_params(&self) -> ars::UrlSearchParams {
         let search = self.url.borrow().search().to_string();
         let query = search.strip_prefix('?').unwrap_or(&search);
-        ada_url::UrlSearchParams::parse(query).unwrap_or_else(|_| {
-            // If parsing fails, return empty params. Unwrap is safe because empty string always parses.
-            #[allow(clippy::expect_used)]
-            ada_url::UrlSearchParams::parse("")
-                .expect("Empty URLSearchParams should always parse successfully")
-        })
+        ars::UrlSearchParams::parse(query)
     }
 
-    fn set_params(&self, params: &ada_url::UrlSearchParams) {
+    fn set_params(&self, params: &ars::UrlSearchParams) {
         let search_str = params.to_string();
-        if search_str.is_empty() {
-            self.url.borrow_mut().set_search(None);
-        } else {
-            self.url.borrow_mut().set_search(Some(&search_str));
-        }
+        self.url.borrow_mut().set_search(&search_str);
     }
 }
 
@@ -43,18 +34,16 @@ impl UrlSearchParams {
 impl<'js> UrlSearchParams {
     #[qjs(constructor)]
     pub fn new(_ctx: Ctx<'js>, init: Opt<Value<'js>>) -> rquickjs::Result<Self> {
-        let dummy_url = ada_url::Url::parse("http://example.com", None)
+        let dummy_url = ars::Url::parse("http://example.com", None)
             .map_err(|_| rquickjs::Error::new_from_js("url", "Failed to create URLSearchParams"))?;
         let url = Rc::new(RefCell::new(dummy_url));
 
-        let mut params = ada_url::UrlSearchParams::parse("")
-            .map_err(|_| rquickjs::Error::new_from_js("url", "Invalid search params"))?;
+        let mut params = ars::UrlSearchParams::parse("");
 
         if let Some(value) = init.0 {
             if let Some(query) = value.as_string() {
                 let query_str = query.to_string()?;
-                params = ada_url::UrlSearchParams::parse(&query_str)
-                    .map_err(|_| rquickjs::Error::new_from_js("url", "Invalid search params"))?;
+                params = ars::UrlSearchParams::parse(&query_str);
             } else if let Some(array) = value.as_array() {
                 for i in 0..array.len() {
                     let entry: Value = array.get(i)?;
@@ -91,8 +80,7 @@ impl<'js> UrlSearchParams {
                         )
                     })?
                     .to_string()?;
-                params = ada_url::UrlSearchParams::parse(&query_str)
-                    .map_err(|_| rquickjs::Error::new_from_js("url", "Invalid search params"))?;
+                params = ars::UrlSearchParams::parse(&query_str);
             }
         }
 
@@ -115,11 +103,7 @@ impl<'js> UrlSearchParams {
 
     pub fn delete(&self, key: String, value: Opt<String>) {
         let mut params = self.get_params();
-        if let Some(val) = value.0 {
-            params.remove(&key, &val);
-        } else {
-            params.remove_key(&key);
-        }
+        params.delete(&key, value.0.as_deref());
         self.set_params(&params);
     }
 
@@ -138,7 +122,7 @@ impl<'js> UrlSearchParams {
 
         for i in 0..entry.len() {
             if let Some(value) = entry.get(i) {
-                array.set(i, value.to_string())?;
+                array.set(i, *value)?;
             }
         }
 
@@ -147,11 +131,7 @@ impl<'js> UrlSearchParams {
 
     pub fn has(&self, key: String, value: Opt<String>) -> bool {
         let params = self.get_params();
-        if let Some(val) = value.0 {
-            params.contains(&key, &val)
-        } else {
-            params.contains_key(&key)
-        }
+        params.has(&key, value.0.as_deref())
     }
 
     pub fn set(&self, key: String, value: String) {
@@ -200,7 +180,7 @@ impl<'js> UrlSearchParams {
     pub fn values(&self, ctx: Ctx<'js>) -> rquickjs::Result<rquickjs::Array<'js>> {
         let array = rquickjs::Array::new(ctx.clone())?;
         for (i, value) in self.get_params().values().enumerate() {
-            array.set(i, value.to_string())?;
+            array.set(i, value)?;
         }
         Ok(array)
     }

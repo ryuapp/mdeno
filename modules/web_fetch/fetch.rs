@@ -83,11 +83,9 @@ async fn fetch_request(
                 if location_str.starts_with("http://") || location_str.starts_with("https://") {
                     current_url = location_str.to_string();
                 } else {
-                    // Parse base URL and construct absolute URL using ada-url
-                    let base = ada_url::Url::parse(&current_url, None)
-                        .map_err(|_| "Failed to parse base URL".to_string())?;
-                    let absolute = ada_url::Url::parse(location_str, Some(&base))
-                        .map_err(|_| "Failed to join URLs".to_string())?;
+                    // Construct absolute URL using ars with current URL as base
+                    let absolute = ars::Url::parse(location_str, Some(&current_url))
+                        .map_err(|_| "Failed to resolve relative URL".to_string())?;
                     current_url = absolute.href().to_string();
                 }
 
