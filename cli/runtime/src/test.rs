@@ -10,7 +10,7 @@ use rquickjs::{
 use std::error::Error;
 use std::sync::Arc;
 
-/// Helper function to get TestContext from globalThis[Symbol.for('mdeno.internal')].testContext
+/// Helper function to get `TestContext` from globalThis[Symbol.for('mdeno.internal')].testContext
 fn get_test_context(ctx: &rquickjs::Ctx<'_>) -> Result<TestContext, Box<dyn Error>> {
     let globals = ctx.globals();
     let symbol_ctor: Function = globals.get("Symbol")?;
@@ -20,6 +20,12 @@ fn get_test_context(ctx: &rquickjs::Ctx<'_>) -> Result<TestContext, Box<dyn Erro
     Ok(internal.get("testContext")?)
 }
 
+/// # Errors
+/// Returns an error if test execution fails
+///
+/// # Panics
+/// Panics if test context access fails
+#[allow(clippy::unwrap_used)] // Test infrastructure: object creation should not fail
 pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize), Box<dyn Error>> {
     let compio_runtime = compio_runtime::Runtime::new()?;
     compio_runtime.block_on(async {
@@ -62,7 +68,7 @@ pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize)
             let result: Value = run_tests_fn.call(()).catch(&ctx).map_err(|caught| {
                 handle_error(caught);
                 // Don't exit - let test runner continue
-            }).unwrap_or_else(|_| {
+            }).unwrap_or_else(|()| {
                 let obj = Object::new(ctx.clone()).unwrap();
                 obj.set("passed", 0).unwrap();
                 obj.set("failed", 0).unwrap();
@@ -99,7 +105,7 @@ pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize)
 
             let result: Value = resolve_pending_fn.call(()).catch(&ctx).map_err(|caught| {
                 handle_error(caught);
-            }).unwrap_or_else(|_| {
+            }).unwrap_or_else(|()| {
                 let obj = Object::new(ctx.clone()).unwrap();
                 obj.set("passed", 0).unwrap();
                 obj.set("failed", 0).unwrap();
@@ -154,22 +160,27 @@ pub fn run_test_js_code(js_code: &str, file_path: &str) -> Result<(usize, usize)
 }
 
 /// Run bytecode for testing - calls globalThis[Symbol.for('mdeno.internal')].test.runTests after module execution
+///
+/// # Errors
+/// Returns an error if test execution fails
+///
+/// # Panics
+/// Panics if test context access fails
 pub fn run_test_bytecode(
     bytecode: &[u8],
     file_path: &str,
 ) -> Result<(usize, usize), Box<dyn Error>> {
     // Try to deserialize as bytecode bundle first
     match rkyv::from_bytes::<BytecodeBundle, rkyv::rancor::Error>(bytecode) {
-        Ok(bundle) => {
-            return run_test_bytecode_bundle(bundle, file_path);
-        }
+        Ok(bundle) => run_test_bytecode_bundle(bundle, file_path),
         Err(_) => {
             // Fall back to single module bytecode (not supported for tests yet)
-            return Err("Single module bytecode not supported for tests".into());
+            Err("Single module bytecode not supported for tests".into())
         }
     }
 }
 
+#[allow(clippy::unwrap_used)] // Test infrastructure: object creation should not fail
 fn run_test_bytecode_bundle(
     bundle: BytecodeBundle,
     file_path: &str,
@@ -224,8 +235,9 @@ fn run_test_bytecode_bundle(
                                     error_msg.push_str(&stack);
                                 }
                             }
-                            _ => {
-                                error_msg.push_str(&format!("{:?}", e));
+                            rquickjs::CaughtError::Error(_) | rquickjs::CaughtError::Value(_) => {
+                                use std::fmt::Write;
+                                let _ = write!(error_msg, "{e:?}");
                             }
                         }
                         error_msg
@@ -263,7 +275,7 @@ fn run_test_bytecode_bundle(
             let result: Value = run_tests_fn.call(()).catch(&ctx).map_err(|caught| {
                 handle_error(caught);
                 // Don't exit - let test runner continue
-            }).unwrap_or_else(|_| {
+            }).unwrap_or_else(|()| {
                 let obj = Object::new(ctx.clone()).unwrap();
                 obj.set("passed", 0).unwrap();
                 obj.set("failed", 0).unwrap();
@@ -300,7 +312,7 @@ fn run_test_bytecode_bundle(
 
             let result: Value = resolve_pending_fn.call(()).catch(&ctx).map_err(|caught| {
                 handle_error(caught);
-            }).unwrap_or_else(|_| {
+            }).unwrap_or_else(|()| {
                 let obj = Object::new(ctx.clone()).unwrap();
                 obj.set("passed", 0).unwrap();
                 obj.set("failed", 0).unwrap();

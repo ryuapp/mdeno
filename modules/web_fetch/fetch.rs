@@ -1,5 +1,4 @@
 use crate::response::Response;
-use once_cell::sync::Lazy;
 use rquickjs::{Class, Ctx, prelude::*};
 use std::collections::HashMap;
 
@@ -20,11 +19,11 @@ impl<'js> rquickjs::FromJs<'js> for FetchOptions {
     }
 }
 
-pub async fn fetch<'js>(
-    ctx: Ctx<'js>,
+pub async fn fetch(
+    ctx: Ctx<'_>,
     url: String,
     options: Opt<FetchOptions>,
-) -> rquickjs::Result<Class<'js, Response<'js>>> {
+) -> rquickjs::Result<Class<'_, Response<'_>>> {
     // Extract method from options, default to GET
     let method = options
         .0
@@ -42,7 +41,8 @@ pub async fn fetch<'js>(
 }
 
 // Global HTTP client
-static HTTP_CLIENT: Lazy<cyper::Client> = Lazy::new(|| cyper::ClientBuilder::new().build());
+static HTTP_CLIENT: std::sync::LazyLock<cyper::Client> =
+    std::sync::LazyLock::new(|| cyper::ClientBuilder::new().build());
 
 async fn fetch_request(
     url: &str,
@@ -60,24 +60,24 @@ async fn fetch_request(
             "DELETE" => HTTP_CLIENT.delete(&current_url),
             "PATCH" => HTTP_CLIENT.patch(&current_url),
             "HEAD" => HTTP_CLIENT.head(&current_url),
-            _ => return Err(format!("Unsupported HTTP method: {}", method)),
+            _ => return Err(format!("Unsupported HTTP method: {method}")),
         }
-        .map_err(|e| format!("Failed to create request: {}", e))?
+        .map_err(|e| format!("Failed to create request: {e}"))?
         .header("User-Agent", "mdeno/0.1.0")
-        .map_err(|e| format!("Failed to set header: {}", e))?
+        .map_err(|e| format!("Failed to set header: {e}"))?
         .send()
         .await
-        .map_err(|e| format!("Request failed: {:?}", e))?;
+        .map_err(|e| format!("Request failed: {e:?}"))?;
 
         let status = response.status().as_u16();
 
         // Check if this is a redirect status (3xx)
-        if status >= 300 && status < 400 && redirect_count < MAX_REDIRECTS {
+        if (300..400).contains(&status) && redirect_count < MAX_REDIRECTS {
             // Get Location header
             if let Some(location) = response.headers().get("location") {
                 let location_str = location
                     .to_str()
-                    .map_err(|e| format!("Invalid Location header: {}", e))?;
+                    .map_err(|e| format!("Invalid Location header: {e}"))?;
 
                 // Handle relative URLs
                 if location_str.starts_with("http://") || location_str.starts_with("https://") {
@@ -109,10 +109,10 @@ async fn fetch_request(
         let body = response
             .text()
             .await
-            .map_err(|e| format!("Failed to read body: {}", e))?;
+            .map_err(|e| format!("Failed to read body: {e}"))?;
 
         return Ok((status, headers_map, body));
     }
 
-    Err(format!("Too many redirects (exceeded {})", MAX_REDIRECTS))
+    Err(format!("Too many redirects (exceeded {MAX_REDIRECTS})"))
 }

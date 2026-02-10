@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 
+/// # Errors
+/// Returns an error if compilation fails
 pub fn compile_js(js_code: &str, output_name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let compio_runtime = compio_runtime::Runtime::new()?;
     compio_runtime.block_on(async {
@@ -34,6 +36,9 @@ pub fn compile_js(js_code: &str, output_name: &str) -> Result<Vec<u8>, Box<dyn E
     })
 }
 
+/// # Errors
+/// Returns an error if compilation fails
+#[allow(clippy::implicit_hasher)] // Public API uses concrete HashMap
 pub fn compile_modules(
     modules: HashMap<String, String>,
     entry_point: String,
@@ -62,7 +67,7 @@ pub fn compile_modules(
                 let module = Module::declare(ctx.clone(), path.clone(), source.clone())
                     .catch(&ctx)
                     .map_err(|e| {
-                        let mut error_msg = format!("Failed to declare module {}: ", path);
+                        let mut error_msg = format!("Failed to declare module {path}: ");
                         match e {
                             rquickjs::CaughtError::Exception(ex) => {
                                 if let Some(msg) = ex.message() {
@@ -76,21 +81,23 @@ pub fn compile_modules(
                                 }
                             }
                             rquickjs::CaughtError::Error(err) => {
-                                error_msg.push_str(&format!("{:?}", err));
+                                use std::fmt::Write;
+                                let _ = write!(error_msg, "{err:?}");
                             }
-                            _ => {
-                                error_msg.push_str(&format!("{:?}", e));
+                            rquickjs::CaughtError::Value(_) => {
+                                use std::fmt::Write;
+                                let _ = write!(error_msg, "{e:?}");
                             }
                         }
                         error_msg
                     })?;
                 let bc = module
                     .write(rquickjs::module::WriteOptions::default())
-                    .map_err(|e| format!("Failed to write bytecode for {}: {:?}", path, e))?;
+                    .map_err(|e| format!("Failed to write bytecode for {path}: {e:?}"))?;
                 Ok::<_, Box<dyn Error>>(bc)
             })
             .await
-            .map_err(|e| format!("Error compiling {}: {}", path, e))?;
+            .map_err(|e| format!("Error compiling {path}: {e}"))?;
 
             bytecode_map.insert(path.clone(), bc);
         }
@@ -103,7 +110,7 @@ pub fn compile_modules(
 
         // Serialize the bundle
         let serialized = rkyv::to_bytes::<rkyv::rancor::Error>(&bundle)
-            .map_err(|e| format!("Failed to serialize bytecode bundle: {}", e))?
+            .map_err(|e| format!("Failed to serialize bytecode bundle: {e}"))?
             .to_vec();
 
         Ok(serialized)

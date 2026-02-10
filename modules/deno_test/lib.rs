@@ -9,6 +9,8 @@ use test_runner::{deno_test, resolve_pending, run_tests, set_test_filename};
 
 use rquickjs::{Ctx, Function, Object, Result, Value};
 
+/// # Errors
+/// Returns an error if module initialization fails
 pub fn init(ctx: &Ctx<'_>) -> Result<()> {
     let globals = ctx.globals();
 

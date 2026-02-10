@@ -5,6 +5,40 @@ members = ["modules/web_console", "modules/web_encoding", "modules/web_fetch", "
     "cli",
 ]
 
+[workspace.lints.clippy]
+# Enable all lint groups
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# Panic prevention (deny in production code)
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_in_result = "deny"
+
+# Debug artifacts
+dbg_macro = "deny"
+print_stdout = "warn"
+print_stderr = "warn"
+
+# Restriction lints
+exit = "deny"
+
+# Allow pedantic lints that are too noisy
+must_use_candidate = "allow"
+too_many_lines = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+needless_pass_by_value = "allow" # FFI boundaries (rquickjs, add_internal_function!) require owned values
+
+# Allow cargo lints for transitive dependencies
+multiple_crate_versions = "allow" # Can't control transitive dependency versions
+
 [profile.release]
 lto = true
 opt-level = "z"

@@ -1,4 +1,7 @@
 // TestContext structure and implementation
+#![allow(clippy::print_stdout)] // Test output intentionally uses println!
+#![allow(clippy::unwrap_used)] // Test infrastructure: mutex poisoning should panic
+#![allow(clippy::unwrap_in_result)] // Test infrastructure: mutex poisoning should panic
 
 use rquickjs::{Ctx, Error, Function, JsLifetime, Object, Result, Value, class::Trace};
 use std::sync::{Arc, Mutex};
@@ -7,6 +10,7 @@ use std::sync::{Arc, Mutex};
 #[rquickjs::class]
 pub struct TestContext {
     #[qjs(skip_trace)]
+    #[allow(clippy::arc_with_non_send_sync)] // JavaScript values aren't Send/Sync
     pub(crate) inner: Arc<Mutex<TestContextInner>>,
 }
 
@@ -29,9 +33,16 @@ pub(crate) struct TestDef {
     pub(crate) only: bool,
 }
 
+impl Default for TestContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[rquickjs::methods]
 impl TestContext {
     #[qjs(constructor)]
+    #[allow(clippy::arc_with_non_send_sync)] // JavaScript values aren't Send/Sync
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(TestContextInner {
@@ -43,12 +54,17 @@ impl TestContext {
     }
 
     #[qjs(rename = "setFilename")]
+    /// # Panics
+    /// Panics if the mutex is poisoned
     pub fn set_filename(&self, filename: String) {
         let mut inner = self.inner.lock().unwrap();
         inner.filename = filename;
     }
 
     /// Clean up all persistent objects to avoid GC assertion
+    ///
+    /// # Panics
+    /// Panics if the mutex is poisoned
     pub fn cleanup(&self) {
         let mut inner = self.inner.lock().unwrap();
 
@@ -63,6 +79,11 @@ impl TestContext {
     }
 
     #[qjs(rename = "registerTest")]
+    /// # Errors
+    /// Returns an error if test registration fails
+    ///
+    /// # Panics
+    /// Panics if the mutex is poisoned
     pub fn register_test<'js>(
         &self,
         ctx: Ctx<'js>,
@@ -107,6 +128,11 @@ impl TestContext {
     }
 
     #[qjs(rename = "runAll")]
+    /// # Errors
+    /// Returns an error if test execution fails
+    ///
+    /// # Panics
+    /// Panics if the mutex is poisoned
     pub fn run_all<'js>(&self, ctx: Ctx<'js>) -> Result<Value<'js>> {
         use deno_terminal::colors;
         use rquickjs::CatchResultExt;
@@ -145,12 +171,8 @@ impl TestContext {
             }
 
             let start = Instant::now();
-            let func = match test.func.clone().restore(&ctx) {
-                Ok(f) => f,
-                Err(e) => {
-                    eprintln!("Error restoring function: {}", e);
-                    continue;
-                }
+            let Ok(func) = test.func.clone().restore(&ctx) else {
+                continue;
             };
 
             let (passed, error, error_stack) = match func.call::<_, Value>(()).catch(&ctx) {
@@ -168,9 +190,8 @@ impl TestContext {
                         });
                         // Mark as pending - will be resolved later
                         continue;
-                    } else {
-                        (true, None, None)
                     }
+                    (true, None, None)
                 }
                 Err(caught) => {
                     // Extract error message and stack trace
@@ -180,8 +201,8 @@ impl TestContext {
                             let stack = ex.stack();
                             (msg, stack)
                         }
-                        rquickjs::CaughtError::Error(e) => (format!("{}", e), None),
-                        rquickjs::CaughtError::Value(v) => (format!("{:?}", v), None),
+                        rquickjs::CaughtError::Error(e) => (format!("{e}"), None),
+                        rquickjs::CaughtError::Value(v) => (format!("{v:?}"), None),
                     };
                     (false, Some(error_msg), stack_trace)
                 }
@@ -195,7 +216,7 @@ impl TestContext {
             } else {
                 colors::red("FAILED")
             };
-            let time_str = format!("({}ms)", duration_ms);
+            let time_str = format!("({duration_ms}ms)");
             println!("{} ... {} {}", test.name, status, colors::gray(&time_str));
 
             results.push(TestResult {
@@ -227,6 +248,11 @@ impl TestContext {
     }
 
     #[qjs(rename = "resolvePending")]
+    /// # Errors
+    /// Returns an error if promise resolution fails
+    ///
+    /// # Panics
+    /// Panics if the mutex is poisoned
     pub fn resolve_pending<'js>(&self, ctx: Ctx<'js>) -> Result<Value<'js>> {
         use deno_terminal::colors;
         use rquickjs::CatchResultExt;
@@ -238,12 +264,8 @@ impl TestContext {
         let mut results = Vec::new();
 
         for pending_promise in pending {
-            let promise = match pending_promise.promise.restore(&ctx) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("Error restoring promise: {}", e);
-                    continue;
-                }
+            let Ok(promise) = pending_promise.promise.restore(&ctx) else {
+                continue;
             };
 
             // Check promise state - finish() should be safe here since runtime.idle() was already called
@@ -256,8 +278,8 @@ impl TestContext {
                             let stack = ex.stack();
                             (msg, stack)
                         }
-                        rquickjs::CaughtError::Error(e) => (format!("{}", e), None),
-                        rquickjs::CaughtError::Value(v) => (format!("{:?}", v), None),
+                        rquickjs::CaughtError::Error(e) => (format!("{e}"), None),
+                        rquickjs::CaughtError::Value(v) => (format!("{v:?}"), None),
                     };
                     (false, Some(error_msg), stack_trace)
                 }
@@ -274,7 +296,7 @@ impl TestContext {
             } else {
                 colors::red("FAILED")
             };
-            let time_str = format!("({}ms)", duration_ms);
+            let time_str = format!("({duration_ms}ms)");
             println!(
                 "{} ... {} {}",
                 pending_promise.test_name,
@@ -329,13 +351,13 @@ fn print_results(results: &[TestResult], filename: &str) {
             println!(
                 "{} {}",
                 failure.name,
-                colors::gray(&format!("=> {}", filename))
+                colors::gray(&format!("=> {filename}"))
             );
             if let Some(error) = &failure.error {
                 println!("{}: Error: {}", colors::red(&colors::bold("error")), error);
             }
             if let Some(stack) = &failure.error_stack {
-                println!("{}", stack);
+                println!("{stack}");
             }
             println!();
         }
@@ -345,7 +367,7 @@ fn print_results(results: &[TestResult], filename: &str) {
             println!(
                 "{} {}",
                 failure.name,
-                colors::gray(&format!("=> {}", filename))
+                colors::gray(&format!("=> {filename}"))
             );
         }
         println!();

@@ -6,3 +6,6 @@ publish = false
 
 [dependencies]
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader"] }
+
+[lints]
+workspace = true

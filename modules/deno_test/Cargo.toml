@@ -8,5 +8,8 @@ publish = false
 path = "lib.rs"
 
 [dependencies]
-rquickjs = { version = "=0.11.0" }
+rquickjs = { version = "=0.11.0", features = ["macro", "classes", "properties", "loader"] }
 deno_terminal = "0.2"
+
+[lints]
+workspace = true

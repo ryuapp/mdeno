@@ -21,7 +21,7 @@ impl TextDecoder {
         if normalized != "utf8" && normalized != "unicode11utf8" {
             return Err(Exception::throw_range(
                 &ctx,
-                &format!("The encoding label provided ('{}') is invalid.", label_str),
+                &format!("The encoding label provided ('{label_str}') is invalid."),
             ));
         }
 
@@ -78,10 +78,7 @@ impl TextDecoder {
         let result = if self.fatal {
             // Fatal mode: throw on invalid UTF-8
             String::from_utf8(bytes).map_err(|e| {
-                Exception::throw_type(
-                    &ctx,
-                    &format!("The encoded data was not valid UTF-8: {}", e),
-                )
+                Exception::throw_type(&ctx, &format!("The encoded data was not valid UTF-8: {e}"))
             })?
         } else {
             // Non-fatal mode: replace invalid sequences with U+FFFD
@@ -105,13 +102,13 @@ fn normalize_encoding_label(label: &str) -> String {
     label.to_lowercase().replace(['-', '_'], "")
 }
 
-/// Extract bytes from ArrayBuffer, TypedArray, or DataView
+/// Extract bytes from `ArrayBuffer`, `TypedArray`, or `DataView`
 fn extract_bytes<'js>(ctx: Ctx<'js>, obj: Object<'js>) -> Result<Vec<u8>> {
     // Try as ArrayBuffer
-    if let Some(buffer) = ArrayBuffer::from_object(obj.clone()) {
-        if let Some(bytes) = buffer.as_bytes() {
-            return Ok(bytes.to_vec());
-        }
+    if let Some(buffer) = ArrayBuffer::from_object(obj.clone())
+        && let Some(bytes) = buffer.as_bytes()
+    {
+        return Ok(bytes.to_vec());
     }
 
     // Try as Uint8Array
@@ -128,10 +125,9 @@ fn extract_bytes<'js>(ctx: Ctx<'js>, obj: Object<'js>) -> Result<Vec<u8>> {
         obj.get::<_, ArrayBuffer>("buffer"),
         obj.get::<_, usize>("byteOffset"),
         obj.get::<_, usize>("byteLength"),
-    ) {
-        if let Some(bytes) = buffer.as_bytes() {
-            return Ok(bytes[offset..offset + length].to_vec());
-        }
+    ) && let Some(bytes) = buffer.as_bytes()
+    {
+        return Ok(bytes[offset..offset + length].to_vec());
     }
 
     Err(Exception::throw_type(

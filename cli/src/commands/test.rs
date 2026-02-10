@@ -53,7 +53,7 @@ pub fn execute(pattern: Option<String>, unstable: bool) -> Result<(), Box<dyn Er
         status,
         total_passed,
         total_failed,
-        colors::gray(&format!("({}ms)", elapsed_ms))
+        colors::gray(&format!("({elapsed_ms}ms)"))
     );
     println!();
 
@@ -127,15 +127,15 @@ fn is_test_file(path: &Path) -> bool {
 
         for ext in &test_extensions {
             // Check for *_test.ext pattern
-            if filename.ends_with(&format!("_test{}", ext)) {
+            if filename.ends_with(&format!("_test{ext}")) {
                 return true;
             }
             // Check for *.test.ext pattern
-            if filename.ends_with(&format!(".test{}", ext)) {
+            if filename.ends_with(&format!(".test{ext}")) {
                 return true;
             }
             // Check for test.ext pattern (exact match)
-            if filename == format!("test{}", ext) {
+            if filename == format!("test{ext}") {
                 return true;
             }
         }
@@ -158,7 +158,7 @@ fn run_test_file(path: &Path, unstable: bool) -> Result<(usize, usize), Box<dyn 
     let has_imports = file_contents.contains("import ") || file_contents.contains("export ");
     let needs_transpilation = path
         .extension()
-        .map_or(false, |ext| ext.to_string_lossy() == "ts");
+        .is_some_and(|ext| ext.to_string_lossy() == "ts");
 
     if has_imports || needs_transpilation {
         // Bundle the test file (handles TypeScript transpilation and JSR imports)

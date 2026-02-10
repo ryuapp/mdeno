@@ -1,5 +1,7 @@
 use rquickjs::{Ctx, Module};
 
+/// # Errors
+/// Returns an error if module initialization fails
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     // Remove __proto__ to prevent prototype pollution
     ctx.eval::<(), _>("delete Object.prototype.__proto__")?;

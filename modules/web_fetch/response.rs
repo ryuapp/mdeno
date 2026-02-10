@@ -36,9 +36,7 @@ impl<'js> Response<'js> {
                 status_text = st;
             }
             if let Ok(h) = obj.get::<_, Object>("headers") {
-                if let Ok(hdrs) = Headers::new(Opt(Some(h))) {
-                    headers = hdrs;
-                }
+                headers = Headers::new(Opt(Some(h)));
             }
         }
 

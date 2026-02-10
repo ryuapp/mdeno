@@ -4,6 +4,8 @@ use rquickjs::{Ctx, Result};
 pub const SECTION_NAME: &str = "md3n04cl1";
 
 pub trait ModuleDef {
+    /// # Errors
+    /// Returns an error if module initialization fails
     fn init(ctx: &Ctx<'_>) -> Result<()>;
     fn source() -> &'static str;
     fn name() -> &'static str;
@@ -48,16 +50,16 @@ impl<T> From<DenoResult<T>> for JsResult<T> {
 impl std::fmt::Display for DenoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DenoError::Io(e) => write!(f, "{}", e),
-            DenoError::BadResource(s) => write!(f, "{}", s),
-            DenoError::Busy(s) => write!(f, "{}", s),
-            DenoError::NotSupported(s) => write!(f, "{}", s),
-            DenoError::FilesystemLoop(s) => write!(f, "{}", s),
-            DenoError::IsADirectory(s) => write!(f, "{}", s),
-            DenoError::NetworkUnreachable(s) => write!(f, "{}", s),
-            DenoError::NotADirectory(s) => write!(f, "{}", s),
-            DenoError::Http(s) => write!(f, "{}", s),
-            DenoError::Other(s) => write!(f, "{}", s),
+            DenoError::Io(e) => write!(f, "{e}"),
+            DenoError::BadResource(s)
+            | DenoError::Busy(s)
+            | DenoError::NotSupported(s)
+            | DenoError::FilesystemLoop(s)
+            | DenoError::IsADirectory(s)
+            | DenoError::NetworkUnreachable(s)
+            | DenoError::NotADirectory(s)
+            | DenoError::Http(s)
+            | DenoError::Other(s) => write!(f, "{s}"),
         }
     }
 }
@@ -78,8 +80,7 @@ impl DenoError {
                 std::io::ErrorKind::PermissionDenied => "PermissionDenied",
                 std::io::ErrorKind::AlreadyExists => "AlreadyExists",
                 std::io::ErrorKind::WouldBlock => "WouldBlock",
-                std::io::ErrorKind::InvalidInput => "InvalidData",
-                std::io::ErrorKind::InvalidData => "InvalidData",
+                std::io::ErrorKind::InvalidInput | std::io::ErrorKind::InvalidData => "InvalidData",
                 std::io::ErrorKind::TimedOut => "TimedOut",
                 std::io::ErrorKind::WriteZero => "WriteZero",
                 std::io::ErrorKind::Interrupted => "Interrupted",

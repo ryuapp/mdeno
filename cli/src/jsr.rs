@@ -1,6 +1,6 @@
 use crate::strip_types::transform;
 use oxc_allocator::Allocator;
-use oxc_ast::ast::*;
+use oxc_ast::ast::Statement;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,12 @@ pub struct ParsedSpecifier {
     pub file_path: Option<String>,
 }
 
+impl Default for JsrResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JsrResolver {
     pub fn new() -> Self {
         let cache_dir = if cfg!(windows) {
@@ -43,6 +49,8 @@ impl JsrResolver {
         Self { cache_dir }
     }
 
+    /// # Errors
+    /// Returns an error if the specifier is invalid
     pub fn parse_specifier(specifier: &str) -> Result<ParsedSpecifier, String> {
         // Parse jsr:@scope/package[@version]/path
         let without_prefix = specifier
@@ -77,12 +85,15 @@ impl JsrResolver {
         Ok(ParsedSpecifier {
             scope: scope.to_string(),
             package: package.to_string(),
-            version: version.map(|s| s.to_string()),
-            file_path: file_path.map(|s| s.to_string()),
+            version: version.map(std::string::ToString::to_string),
+            file_path: file_path.map(std::string::ToString::to_string),
         })
     }
 
     /// Resolve jsr:@scope/package@version/path to cached file path and all dependencies
+    ///
+    /// # Errors
+    /// Returns an error if resolution fails
     pub fn resolve(&self, specifier: &str) -> Result<HashMap<String, PathBuf>, String> {
         let parsed = Self::parse_specifier(specifier)?;
         let full_package = format!("{}/{}", parsed.scope, parsed.package);
@@ -97,7 +108,7 @@ impl JsrResolver {
         let has_file_path = parsed.file_path.is_some();
         let export_key = if let Some(path) = parsed.file_path {
             // Export name provided (e.g., "assert_equals" from jsr:@std/assert@1.0.0/assert_equals)
-            format!("./{}", path)
+            format!("./{path}")
         } else {
             // No export name, use default export
             ".".to_string()
@@ -105,8 +116,8 @@ impl JsrResolver {
 
         let file = exports
             .get(&export_key)
-            .map(|s| s.as_str())
-            .ok_or_else(|| format!("Export '{}' not found in package", export_key))?
+            .map(std::string::String::as_str)
+            .ok_or_else(|| format!("Export '{export_key}' not found in package"))?
             .trim_start_matches("./")
             .to_string();
 
@@ -151,7 +162,7 @@ impl JsrResolver {
         visited: &mut HashSet<String>,
     ) -> Result<(), String> {
         // Check if already visited
-        let visit_key = format!("{}/{}/{}", package, version, file_path);
+        let visit_key = format!("{package}/{version}/{file_path}");
         if visited.contains(&visit_key) {
             return Ok(());
         }
@@ -159,13 +170,14 @@ impl JsrResolver {
 
         // Construct JSR specifier for this file
         let file_without_ext = file_path.trim_start_matches("./").trim_end_matches(".ts");
-        let jsr_specifier = format!(
-            "jsr:{}/{}@{}/{}",
-            package.split('/').next().unwrap(),
-            package.split('/').nth(1).unwrap(),
-            version,
-            file_without_ext
-        );
+        let mut package_parts = package.split('/');
+        let scope = package_parts
+            .next()
+            .ok_or_else(|| "Invalid package format".to_string())?;
+        let package_name = package_parts
+            .next()
+            .ok_or_else(|| "Invalid package format".to_string())?;
+        let jsr_specifier = format!("jsr:{scope}/{package_name}@{version}/{file_without_ext}");
 
         // Download the file
         let cache_path = self.fetch_file_impl(package, version, file_path)?;
@@ -173,14 +185,20 @@ impl JsrResolver {
 
         // Read the cached file to extract dependencies
         let content = fs::read_to_string(&cache_path)
-            .map_err(|e| format!("Failed to read cached file: {}", e))?;
+            .map_err(|e| format!("Failed to read cached file: {e}"))?;
 
         // Extract relative imports
-        let imports = self.extract_relative_imports(&content);
+        let imports = Self::extract_relative_imports(&content);
         for import_path in imports {
             // Convert .js back to .ts for fetching
-            let import_path_ts = if import_path.ends_with(".js") {
-                import_path.strip_suffix(".js").unwrap().to_string() + ".ts"
+            let import_path_ts = if Path::new(&import_path)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("js"))
+            {
+                Path::new(&import_path)
+                    .with_extension("ts")
+                    .display()
+                    .to_string()
             } else {
                 import_path.clone()
             };
@@ -209,8 +227,14 @@ impl JsrResolver {
         file_path: &str,
     ) -> Result<PathBuf, String> {
         // Determine cache file path (.ts files are cached as .js)
-        let cache_file_path = if file_path.ends_with(".ts") {
-            file_path.strip_suffix(".ts").unwrap().to_string() + ".js"
+        let cache_file_path = if Path::new(file_path)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("ts"))
+        {
+            Path::new(file_path)
+                .with_extension("js")
+                .display()
+                .to_string()
         } else {
             file_path.to_string()
         };
@@ -227,91 +251,95 @@ impl JsrResolver {
         }
 
         // Download from JSR using cyper
-        let file_url = format!("{}/{}/{}/{}", JSR_URL, package, version, file_path);
+        let file_url = format!("{JSR_URL}/{package}/{version}/{file_path}");
 
         let compio_runtime = compio::runtime::Runtime::new()
-            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+            .map_err(|e| format!("Failed to create runtime: {e}"))?;
 
         let mut content = compio_runtime.block_on(async {
             let client = cyper::Client::new();
             let response = client
                 .get(&file_url)
-                .map_err(|e| format!("Failed to create request: {}", e))?
+                .map_err(|e| format!("Failed to create request: {e}"))?
                 .send()
                 .await
-                .map_err(|e| format!("Failed to fetch JSR file: {}", e))?;
+                .map_err(|e| format!("Failed to fetch JSR file: {e}"))?;
 
             response
                 .text()
                 .await
-                .map_err(|e| format!("Failed to read JSR file: {}", e))
+                .map_err(|e| format!("Failed to read JSR file: {e}"))
         })?;
 
         // Strip TypeScript if .ts file
-        if file_path.ends_with(".ts") {
+        if Path::new(file_path)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("ts"))
+        {
             content = transform(&content, file_path)
-                .map_err(|e| format!("Failed to strip TypeScript: {}", e))?;
+                .map_err(|e| format!("Failed to strip TypeScript: {e}"))?;
         }
 
         // Rewrite .ts imports to .js
-        content = self.rewrite_ts_imports(&content);
+        content = Self::rewrite_ts_imports(&content);
 
         // Create cache directory
         if let Some(parent) = cache_path.parent() {
             fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create cache directory: {}", e))?;
+                .map_err(|e| format!("Failed to create cache directory: {e}"))?;
         }
 
         // Write to cache
-        fs::write(&cache_path, content).map_err(|e| format!("Failed to write cache: {}", e))?;
+        fs::write(&cache_path, content).map_err(|e| format!("Failed to write cache: {e}"))?;
 
         Ok(cache_path)
     }
 
+    #[allow(clippy::unused_self)] // Method uses cache_dir from self
     fn fetch_exports(
         &self,
         package: &str,
         version: &str,
     ) -> Result<HashMap<String, String>, String> {
-        let meta_url = format!("{}/{}/{}_meta.json", JSR_URL, package, version);
+        let meta_url = format!("{JSR_URL}/{package}/{version}_meta.json");
 
         let compio_runtime = compio::runtime::Runtime::new()
-            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+            .map_err(|e| format!("Failed to create runtime: {e}"))?;
 
         let body = compio_runtime.block_on(async {
             let client = cyper::Client::new();
             let response = client
                 .get(&meta_url)
-                .map_err(|e| format!("Failed to create request: {}", e))?
+                .map_err(|e| format!("Failed to create request: {e}"))?
                 .send()
                 .await
-                .map_err(|e| format!("Failed to fetch JSR version metadata: {}", e))?;
+                .map_err(|e| format!("Failed to fetch JSR version metadata: {e}"))?;
 
             response
                 .text()
                 .await
-                .map_err(|e| format!("Failed to read JSR version metadata: {}", e))
+                .map_err(|e| format!("Failed to read JSR version metadata: {e}"))
         })?;
 
         let metadata: JsrVersionMetadata = serde_json::from_str(&body)
-            .map_err(|e| format!("Failed to parse JSR version metadata: {}", e))?;
+            .map_err(|e| format!("Failed to parse JSR version metadata: {e}"))?;
 
         Ok(metadata.exports)
     }
 
-    fn rewrite_ts_imports(&self, content: &str) -> String {
+    fn rewrite_ts_imports(content: &str) -> String {
         // Simple regex-based rewrite of .ts imports to .js
         // This handles: import ... from "./foo.ts" and export ... from "./foo.ts"
         content
             .replace(r#"from "./\"#, "FROM_PLACEHOLDER_")
-            .replace(r#"from '../\"#, "FROM_PARENT_PLACEHOLDER_")
+            .replace(r"from '../\", "FROM_PARENT_PLACEHOLDER_")
             .replace(r#".ts""#, r#".js""#)
-            .replace(r#".ts'"#, r#".js'"#)
+            .replace(r".ts'", r".js'")
             .replace("FROM_PLACEHOLDER_", r#"from "./"#)
-            .replace("FROM_PARENT_PLACEHOLDER_", r#"from '../"#)
+            .replace("FROM_PARENT_PLACEHOLDER_", r"from '../")
     }
 
-    fn extract_relative_imports(&self, source: &str) -> Vec<String> {
+    fn extract_relative_imports(source: &str) -> Vec<String> {
         let allocator = Allocator::default();
         let source_type = SourceType::mjs();
 

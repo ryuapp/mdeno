@@ -7,6 +7,12 @@ use rquickjs::{Ctx, JsLifetime, Result, class::Trace};
 #[rquickjs::class]
 pub struct Crypto {}
 
+impl Default for Crypto {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[rquickjs::methods]
 impl Crypto {
     #[qjs(constructor)]
@@ -20,7 +26,9 @@ impl Crypto {
     }
 }
 
-/// Initialize the web_crypto module
+/// Initialize the `web_crypto` module
+/// # Errors
+/// Returns an error if module initialization fails
 pub fn init(ctx: &Ctx<'_>) -> Result<()> {
     let globals = ctx.globals();
 

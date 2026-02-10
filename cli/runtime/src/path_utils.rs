@@ -8,9 +8,9 @@ pub fn to_file_url(path: &Path) -> String {
     // On Windows, paths start with drive letter (e.g., C:/...)
     // On Unix, paths start with / (e.g., /home/...)
     if cfg!(windows) {
-        format!("file:///{}", path_str)
+        format!("file:///{path_str}")
     } else {
-        format!("file://{}", path_str)
+        format!("file://{path_str}")
     }
 }
 

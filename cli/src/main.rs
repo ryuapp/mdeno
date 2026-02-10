@@ -18,7 +18,7 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn Error>> {
     // Check if this executable has embedded bytecode
-    if let Ok(Some(bytecode)) = extract_embedded_bytecode() {
+    if let Some(bytecode) = extract_embedded_bytecode() {
         // Standalone binary: args are retrieved directly in deno_os module
         return mdeno_runtime::run_bytecode(&bytecode);
     }
@@ -50,10 +50,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn extract_embedded_bytecode() -> Result<Option<Vec<u8>>, Box<dyn Error>> {
+fn extract_embedded_bytecode() -> Option<Vec<u8>> {
     match libsui::find_section(SECTION_NAME) {
-        Ok(Some(data)) => Ok(Some(data.to_vec())),
-        Ok(None) => Ok(None),
-        Err(_) => Ok(None),
+        Ok(Some(data)) => Some(data.to_vec()),
+        Ok(None) | Err(_) => None,
     }
 }

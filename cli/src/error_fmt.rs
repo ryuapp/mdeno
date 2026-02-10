@@ -12,13 +12,14 @@ use std::fmt::Write;
 /// displays the first error message without a number, and only numbers the source chain
 /// starting from 0. Our implementation numbers all errors including the first one.
 /// Deno's version also handles multi-line error messages with additional indentation.
+#[allow(clippy::unwrap_used)] // Writing to String never fails
 pub fn format_error_chain(error: &dyn Error) -> String {
     let mut message = String::new();
     let mut display_count = 0;
 
     // Start with the error itself
     let current_message = error.to_string();
-    write!(&mut message, "\n    {}: {}", display_count, current_message).unwrap();
+    write!(&mut message, "\n    {display_count}: {current_message}").unwrap();
     let mut past_message = current_message;
     display_count += 1;
 
@@ -29,7 +30,7 @@ pub fn format_error_chain(error: &dyn Error) -> String {
         maybe_source = source.source();
 
         if current_message != past_message {
-            write!(&mut message, "\n    {}: {}", display_count, current_message).unwrap();
+            write!(&mut message, "\n    {display_count}: {current_message}").unwrap();
             past_message = current_message;
             display_count += 1;
         }

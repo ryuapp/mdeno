@@ -5,6 +5,8 @@ use rquickjs::{Class, Ctx};
 use search_params::UrlSearchParams;
 use url::Url;
 
+/// # Errors
+/// Returns an error if module initialization fails
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     // Register URLSearchParams class
     Class::<UrlSearchParams>::define(&ctx.globals())?;

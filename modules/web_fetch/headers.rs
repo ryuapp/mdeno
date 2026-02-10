@@ -12,18 +12,16 @@ pub struct Headers {
 #[rquickjs::methods]
 impl Headers {
     #[qjs(constructor)]
-    pub fn new(init: Opt<Object<'_>>) -> Result<Self> {
+    pub fn new(init: Opt<Object<'_>>) -> Self {
         let mut headers = HashMap::new();
 
         if let Some(obj) = init.0 {
-            for prop in obj.props::<String, String>() {
-                if let Ok((key, value)) = prop {
-                    headers.insert(key.to_lowercase(), value);
-                }
+            for (key, value) in obj.props::<String, String>().flatten() {
+                headers.insert(key.to_lowercase(), value);
             }
         }
 
-        Ok(Headers { headers })
+        Headers { headers }
     }
 
     pub fn get(&self, name: String) -> Option<String> {

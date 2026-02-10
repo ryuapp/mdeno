@@ -47,9 +47,9 @@ pub fn to_file_url(path: &Path) -> String {
     // On Windows, paths start with drive letter (e.g., C:/...)
     // On Unix, paths start with / (e.g., /home/...)
     if cfg!(windows) {
-        format!("file:///{}", path_str)
+        format!("file:///{path_str}")
     } else {
-        format!("file://{}", path_str)
+        format!("file://{path_str}")
     }
 }
 
@@ -131,6 +131,13 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn test_strip_unc_prefix() {
+        fn run_test(input: &str, expected: &str) {
+            assert_eq!(
+                super::strip_unc_prefix(PathBuf::from(input)),
+                PathBuf::from(expected)
+            );
+        }
+
         run_test(r"C:\", r"C:\");
         run_test(r"C:\test\file.txt", r"C:\test\file.txt");
 
@@ -154,13 +161,6 @@ mod tests {
             r"\\?\server1\e$\test\file.txt",
             r"\\server1\e$\test\file.txt",
         );
-
-        fn run_test(input: &str, expected: &str) {
-            assert_eq!(
-                super::strip_unc_prefix(PathBuf::from(input)),
-                PathBuf::from(expected)
-            );
-        }
     }
 
     #[test]

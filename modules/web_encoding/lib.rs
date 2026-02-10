@@ -7,6 +7,8 @@ use text_decoder::TextDecoder;
 use text_encoder::TextEncoder;
 use utils::add_internal_function;
 
+/// # Errors
+/// Returns an error if module initialization fails
 pub fn init(ctx: &Ctx<'_>) -> Result<()> {
     setup_internal(ctx).map_err(|_| rquickjs::Error::Unknown)?;
     setup_text_encoder(ctx)?;
@@ -29,9 +31,9 @@ fn setup_internal(ctx: &Ctx) -> std::result::Result<(), Box<dyn Error>> {
         match base64::engine::general_purpose::STANDARD.decode(data.trim()) {
             Ok(decoded) => match String::from_utf8(decoded) {
                 Ok(s) => s,
-                Err(e) => format!("ERROR: Invalid UTF-8 sequence: {}", e),
+                Err(e) => format!("ERROR: Invalid UTF-8 sequence: {e}"),
             },
-            Err(e) => format!("ERROR: Invalid base64 string: {}", e),
+            Err(e) => format!("ERROR: Invalid base64 string: {e}"),
         }
     });
 

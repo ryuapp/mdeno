@@ -1,6 +1,8 @@
 // Integration tests for --unstable flag functionality
 // These tests verify that JSR imports are properly gated behind the --unstable flag
 
+#![allow(clippy::unwrap_used)] // Test code: unwrap is acceptable
+
 use std::fs;
 use tempfile::TempDir;
 
