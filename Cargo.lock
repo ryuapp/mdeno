@@ -591,6 +591,8 @@ name = "deno_common"
 version = "0.1.0"
 dependencies = [
  "rquickjs",
+ "utils",
+ "utils_macros",
 ]
 
 [[package]]
@@ -600,6 +602,7 @@ dependencies = [
  "rquickjs",
  "tempfile",
  "utils",
+ "utils_macros",
 ]
 
 [[package]]
@@ -608,6 +611,7 @@ version = "0.1.0"
 dependencies = [
  "rquickjs",
  "utils",
+ "utils_macros",
 ]
 
 [[package]]
@@ -618,6 +622,7 @@ dependencies = [
  "rquickjs",
  "serde_json",
  "utils",
+ "utils_macros",
 ]
 
 [[package]]
@@ -2915,7 +2920,28 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 name = "utils"
 version = "0.1.0"
 dependencies = [
+ "oxc_allocator",
+ "oxc_codegen",
+ "oxc_parser",
+ "oxc_semantic",
+ "oxc_span",
+ "oxc_transformer",
  "rquickjs",
+]
+
+[[package]]
+name = "utils_macros"
+version = "0.1.0"
+dependencies = [
+ "oxc_allocator",
+ "oxc_codegen",
+ "oxc_parser",
+ "oxc_semantic",
+ "oxc_span",
+ "oxc_transformer",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -3041,6 +3067,7 @@ version = "0.1.0"
 dependencies = [
  "rquickjs",
  "utils",
+ "utils_macros",
 ]
 
 [[package]]
@@ -3080,6 +3107,8 @@ version = "0.1.0"
 dependencies = [
  "rquickjs",
  "sys-locale",
+ "utils",
+ "utils_macros",
 ]
 
 [[package]]

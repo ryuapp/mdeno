@@ -1,7 +1,9 @@
 // Copyright 2018-2025 the Deno authors. MIT license.
 // Deno namespace binding point - individual modules define their own APIs
 
+// @ts-ignore: mdeno internal API
 const fs = globalThis.__mdeno__.fs;
+// @ts-ignore: mdeno internal API
 const os = globalThis.__mdeno__.os;
 
 const permissionStatus = new os.PermissionStatus("granted", false);
@@ -36,12 +38,12 @@ const denoNs = {
 
   // Permission APIs - always grant
   permissions: {
-    query: (_desc) => Promise.resolve(permissionStatus),
-    querySync: (_desc) => permissionStatus,
-    revoke: (_desc) => Promise.resolve(permissionStatus),
-    revokeSync: (_desc) => permissionStatus,
-    request: (_desc) => Promise.resolve(permissionStatus),
-    requestSync: (_desc) => permissionStatus,
+    query: (_desc: unknown) => Promise.resolve(permissionStatus),
+    querySync: (_desc: unknown) => permissionStatus,
+    revoke: (_desc: unknown) => Promise.resolve(permissionStatus),
+    revokeSync: (_desc: unknown) => permissionStatus,
+    request: (_desc: unknown) => Promise.resolve(permissionStatus),
+    requestSync: (_desc: unknown) => permissionStatus,
   },
 };
 
@@ -61,6 +63,7 @@ Object.defineProperty(denoNs, "build", {
 
 // Add errors namespace
 Object.defineProperty(denoNs, "errors", {
+  // @ts-ignore: mdeno internal API
   value: globalThis.__mdeno__.errors,
   enumerable: true,
   writable: false,

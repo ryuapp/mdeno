@@ -1,5 +1,5 @@
 {
-  "workspace": ["./scripts"],
+  "workspace": ["./scripts", "./modules", "./modules/deno_test"],
   "fmt": {
     "proseWrap": "preserve"
   },
@@ -14,7 +14,7 @@
     "test:js": "cargo run --release --bin mdeno -- test .",
     "format": "deno fmt && deno lint --fix && cargo fmt",
     "check:format": "deno fmt --check && deno lint && cargo fmt --check",
-    "lint": "cargo clippy --all-targets --all-features -- -D warnings",
+    "lint": "deno lint && cargo clippy --all-targets --all-features -- -D warnings",
     "compile:example": {
       "command": "cargo run --release --bin mdeno -- compile cli/example.ts",
       "dependencies": ["build:mdenort"]

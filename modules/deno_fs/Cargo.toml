@@ -10,6 +10,7 @@ path = "lib.rs"
 [dependencies]
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader"] }
 utils = { path = "../utils" }
+utils_macros = { path = "../utils/macros" }
 tempfile = "3.24.0"
 
 [lints]

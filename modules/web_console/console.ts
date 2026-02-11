@@ -1,6 +1,7 @@
+// @ts-ignore: mdeno internal API
 const __internal = globalThis[Symbol.for("mdeno.internal")];
 
-function formatValue(arg) {
+function formatValue(arg: unknown): string {
   if (typeof arg === "string") return arg;
   if (arg === null) return "null";
   if (arg === undefined) return "undefined";
@@ -24,7 +25,7 @@ function formatValue(arg) {
   if (typeof arg === "symbol") return arg.toString();
 
   if (Object.prototype.toString.call(arg) === "[object Date]") {
-    return arg.toISOString();
+    return (arg as Date).toISOString();
   }
 
   // Check for Promise
@@ -53,12 +54,14 @@ function formatValue(arg) {
   }
 
   if (typeof arg === "object") {
-    const constructorName = arg.constructor?.name;
+    const constructorName = (arg as Record<string, unknown>).constructor?.name;
     if (constructorName && constructorName !== "Object") {
       const ownKeys = Object.getOwnPropertyNames(arg);
-      const protoKeys = arg.constructor.prototype
-        ? Object.getOwnPropertyNames(arg.constructor.prototype).filter(
-          (key) => key !== "constructor",
+      const protoKeys = (arg as Record<string, unknown>).constructor.prototype
+        ? Object.getOwnPropertyNames(
+          (arg as Record<string, unknown>).constructor.prototype,
+        ).filter(
+          (key: string) => key !== "constructor",
         )
         : [];
       const allKeys = [...new Set([...ownKeys, ...protoKeys])];
@@ -67,7 +70,7 @@ function formatValue(arg) {
         .filter((key) => !key.startsWith("_"))
         .map((key) => {
           try {
-            const val = arg[key];
+            const val = (arg as Record<string, unknown>)[key];
             if (typeof val === "function") return null;
             const valStr = typeof val === "string" ? `"${val}"` : String(val);
             return `  ${key}: ${valStr}`;
@@ -89,12 +92,12 @@ function formatValue(arg) {
 }
 
 globalThis.console = {
-  log(...args) {
+  log(...args: unknown[]) {
     const formatted = args.map(formatValue).join(" ");
     __internal.print(formatted);
   },
-  error(...args) {
+  error(...args: unknown[]) {
     const formatted = args.map(formatValue).join(" ");
     __internal.print(formatted);
   },
-};
+} as Console;

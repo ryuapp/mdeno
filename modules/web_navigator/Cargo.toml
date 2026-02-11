@@ -10,6 +10,8 @@ path = "lib.rs"
 [dependencies]
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader"] }
 sys-locale = "0.3.2"
+utils = { path = "../utils" }
+utils_macros = { path = "../utils/macros" }
 
 [lints]
 workspace = true
