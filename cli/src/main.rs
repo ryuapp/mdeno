@@ -24,26 +24,28 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
 
     // Parse command line arguments
-    let cli_args = flag::parse_args(std::env::args().collect())?;
+    let cli_args = flag::parse_args();
 
     // Set script arguments for Deno.args
     mdeno_runtime::set_script_args(cli_args.script_args);
 
     match cli_args.command {
-        flag::Command::Eval => {
-            let code = cli_args.code.ok_or("Code is required for eval command")?;
+        flag::Command::Eval { code } => {
             commands::eval::execute(&code)?;
         }
-        flag::Command::Run => {
-            let file_path = cli_args.file_path.ok_or("File path is required")?;
+        flag::Command::Run { file_path } => {
             commands::run::execute(&file_path, cli_args.unstable)?;
         }
-        flag::Command::Compile => {
-            let file_path = cli_args.file_path.ok_or("File path is required")?;
+        flag::Command::Compile { file_path } => {
             commands::compile::execute(&file_path, cli_args.unstable)?;
         }
-        flag::Command::Test => {
-            commands::test::execute(cli_args.test_pattern, cli_args.unstable)?;
+        flag::Command::Test { pattern } => {
+            commands::test::execute(pattern, cli_args.unstable)?;
+        }
+        flag::Command::Help { command } => {
+            // Show help using bpaf directly (no process spawn)
+            flag::print_help(command.as_deref());
+            std::process::exit(0);
         }
     }
 
