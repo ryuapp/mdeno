@@ -29,8 +29,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: deno task check:format
-      - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Check Lint
+        run: deno task lint
+      - name: Check types
+        run: deno check --unstable-tsgo
 
   build:
     name: Build

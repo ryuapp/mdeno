@@ -23,7 +23,7 @@ impl ModuleDef for ProcessModule {
     }
 
     fn source() -> &'static str {
-        include_str!("process.js")
+        include_str!("process.ts")
     }
 }
 

@@ -6,6 +6,7 @@ use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 use utils::{DenoError, DenoResult, JsResult, add_internal_function};
+use utils_macros::include_ts;
 
 #[derive(Debug, Clone)]
 pub struct FileInfo {
@@ -147,7 +148,8 @@ pub fn init(ctx: &Ctx<'_>) -> QuickResult<()> {
     setup_internal(ctx).map_err(|_| rquickjs::Error::Unknown)?;
 
     // Register fs APIs under __mdeno__.fs as a module
-    let module = Module::evaluate(ctx.clone(), "deno_fs", include_str!("deno_fs.js"))?;
+    let js_source = include_ts!("deno_fs.ts");
+    let module = Module::evaluate(ctx.clone(), "deno_fs", js_source)?;
     module.finish::<()>()?;
 
     Ok(())

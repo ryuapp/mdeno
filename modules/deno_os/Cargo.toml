@@ -12,6 +12,7 @@ libsui = { version = "0.12.5" }
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader"] }
 serde_json = { version = "1.0.148" }
 utils = { path = "../utils" }
+utils_macros = { path = "../utils/macros" }
 
 [lints]
 workspace = true

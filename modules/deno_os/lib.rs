@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::env;
 use std::sync::OnceLock;
 use utils::{SECTION_NAME, add_internal_function};
+use utils_macros::include_ts;
 
 static SCRIPT_ARGS: OnceLock<Vec<String>> = OnceLock::new();
 
@@ -32,7 +33,8 @@ pub fn set_script_args(args: Vec<String>) {
 /// Returns an error if module initialization fails
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     setup_internal(ctx).map_err(|_| rquickjs::Error::Unknown)?;
-    let module = Module::evaluate(ctx.clone(), "deno_os", include_str!("deno_os.js"))?;
+    let js_source = include_ts!("deno_os.ts");
+    let module = Module::evaluate(ctx.clone(), "deno_os", js_source)?;
     module.finish::<()>()?;
     Ok(())
 }

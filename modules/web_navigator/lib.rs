@@ -1,11 +1,13 @@
 use rquickjs::{Ctx, Module};
 use std::error::Error;
+use utils_macros::include_ts;
 
 /// # Errors
 /// Returns an error if module initialization fails
 pub fn init(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     setup_internal(ctx).map_err(|_| rquickjs::Error::Unknown)?;
-    let module = Module::evaluate(ctx.clone(), "web_navigator", include_str!("navigator.js"))?;
+    let js_source = include_ts!("navigator.ts");
+    let module = Module::evaluate(ctx.clone(), "web_navigator", js_source)?;
     module.finish::<()>()?;
     Ok(())
 }
