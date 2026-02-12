@@ -14,7 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "=1.0.100"
-clap_lex = "=0.7.7"
+bpaf = { version = "=0.9.23", features = ["autocomplete"] }
 deno_terminal = "=0.2.3"
 libsui = "=0.12.6"
 mdeno_path_util = { path = "../modules/mdeno_path_util" }

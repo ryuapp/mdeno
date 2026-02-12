@@ -1,126 +1,131 @@
-use clap_lex::RawArgs;
-use std::error::Error;
+use bpaf::{Args, OptionParser, Parser, construct, long, positional};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct CliArgs {
     pub command: Command,
-    pub file_path: Option<String>,
-    pub code: Option<String>,
-    pub test_pattern: Option<String>,
     pub script_args: Vec<String>,
     pub unstable: bool,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Command {
-    Run,
-    Compile,
-    Eval,
-    Test,
+    Run { file_path: String },
+    Compile { file_path: String },
+    Eval { code: String },
+    Test { pattern: Option<String> },
+    Help { command: Option<String> },
 }
 
-/// # Errors
-/// Returns an error if argument parsing fails
-pub fn parse_args(args: Vec<String>) -> Result<CliArgs, Box<dyn Error>> {
-    let args_clone = args.clone();
-    let raw = RawArgs::new(args);
-    let mut cursor = raw.cursor();
-    raw.next(&mut cursor); // skip program name
+/// Parse command line arguments
+pub fn parse_args() -> CliArgs {
+    let args = Args::current_args().set_name("mdeno");
 
-    let mut file_path: Option<String> = None;
-    let mut code: Option<String> = None;
-    let mut test_pattern: Option<String> = None;
-    let mut command = Command::Run;
-    let mut unstable = false;
-
-    // Parse command and flags
-    while let Some(arg) = raw.next(&mut cursor) {
-        if let Ok(value) = arg.to_value() {
-            match value {
-                "--unstable" => {
-                    unstable = true;
-                }
-                "compile" => {
-                    command = Command::Compile;
-                }
-                "run" => {
-                    command = Command::Run;
-                }
-                "eval" => {
-                    command = Command::Eval;
-                    // Next argument should be the code
-                    if let Some(code_arg) = raw.next(&mut cursor)
-                        && let Ok(code_value) = code_arg.to_value()
-                    {
-                        code = Some(code_value.to_string());
-                    }
-                    break;
-                }
-                "test" => {
-                    command = Command::Test;
-                    // Continue parsing for test pattern and other flags
-                }
-                _ if !value.starts_with('-') => {
-                    // Found file path or test pattern
-                    if command == Command::Test {
-                        test_pattern = Some(value.to_string());
-                    } else {
-                        file_path = Some(value.to_string());
-                        break;
-                    }
-                }
-                _ => {}
-            }
+    match cli_parser().run_inner(args) {
+        Ok(result) => result,
+        Err(err) => {
+            err.print_message(80);
+            std::process::exit(err.exit_code());
         }
     }
+}
 
-    // Validate arguments based on command
-    match command {
-        Command::Eval => {
-            if code.is_none() {
-                return Err("Code string is required for eval command".into());
-            }
+/// Print help message for a specific command
+pub fn print_help(command: Option<&str>) {
+    let parser = cli_parser();
+
+    if let Some(cmd) = command {
+        // Print help for specific command by simulating args
+        let help_args = vec![cmd.to_string(), "--help".to_string()];
+        let args = Args::from(help_args.as_slice()).set_name("mdeno");
+        if let Err(err) = parser.run_inner(args) {
+            err.print_message(80);
         }
-        Command::Test => {
-            // Test pattern is optional, defaults to current directory
-        }
-        _ => {
-            if file_path.is_none() {
-                println!(
-                    "mdeno is a minimal JavaScript runtime for CLI tools.\n\n\
-                    USAGE:\n  \
-                      mdeno run <file>       Run a JavaScript or TypeScript file\n  \
-                      mdeno eval <code>      Evaluate a script from the command line\n  \
-                      mdeno compile <file>   Compile the script into a self contained executable\n  \
-                      mdeno test [pattern]   Run tests\n\n\
-                    OPTIONS:\n  \
-                      --unstable             Enable unstable features"
-                );
-                std::process::exit(1);
-            }
+    } else {
+        // Print main help by simulating --help arg
+        let help_args = vec!["--help".to_string()];
+        let args = Args::from(help_args.as_slice()).set_name("mdeno");
+        if let Err(err) = parser.run_inner(args) {
+            err.print_message(80);
         }
     }
+}
 
-    // Find script arguments (everything after the file path or code)
-    let mut found_target = false;
-    let mut script_args = Vec::new();
+fn unstable_flag() -> impl Parser<bool> {
+    long("unstable").help("Enable unstable features").switch()
+}
 
-    let target = file_path.as_ref().or(code.as_ref());
+fn cli_parser() -> OptionParser<CliArgs> {
+    // Run command: mdeno run <file> [-- args...]
+    let run_file = positional::<String>("FILE").help("File to run");
+    let run_args = positional::<String>("ARGS")
+        .help("Arguments to pass to the script (use -- to separate)")
+        .many();
+    let run = construct!(unstable_flag(), run_file, run_args)
+        .map(|(unstable, file_path, script_args)| CliArgs {
+            command: Command::Run { file_path },
+            script_args,
+            unstable,
+        })
+        .to_options()
+        .command("run")
+        .help("Run a JavaScript or TypeScript file");
 
-    for arg in &args_clone {
-        if found_target {
-            script_args.push(arg.clone());
-        } else if Some(arg) == target {
-            found_target = true;
-        }
-    }
+    // Compile command: mdeno compile <file>
+    let compile_file = positional::<String>("FILE").help("File to compile");
+    let compile = construct!(unstable_flag(), compile_file)
+        .map(|(unstable, file_path)| CliArgs {
+            command: Command::Compile { file_path },
+            script_args: Vec::new(),
+            unstable,
+        })
+        .to_options()
+        .command("compile")
+        .help("Compile the script into a self contained executable");
 
-    Ok(CliArgs {
-        command,
-        file_path,
-        code,
-        test_pattern,
-        script_args,
-        unstable,
-    })
+    // Eval command: mdeno eval <code>
+    let eval_code = positional::<String>("CODE").help("Code to evaluate");
+    let eval = construct!(unstable_flag(), eval_code)
+        .map(|(unstable, code)| CliArgs {
+            command: Command::Eval { code },
+            script_args: Vec::new(),
+            unstable,
+        })
+        .to_options()
+        .command("eval")
+        .help("Evaluate a script from the command line");
+
+    // Test command: mdeno test [pattern]
+    let test_pattern = positional::<String>("PATTERN")
+        .help("Test file pattern (optional)")
+        .optional();
+    let test = construct!(unstable_flag(), test_pattern)
+        .map(|(unstable, pattern)| CliArgs {
+            command: Command::Test { pattern },
+            script_args: Vec::new(),
+            unstable,
+        })
+        .to_options()
+        .command("test")
+        .help("Run tests");
+
+    // Help command: mdeno help [command]
+    let help_command = positional::<String>("COMMAND")
+        .help("Command to get help for (optional)")
+        .optional();
+    let help = construct!(help_command)
+        .map(|command| CliArgs {
+            command: Command::Help { command },
+            script_args: Vec::new(),
+            unstable: false,
+        })
+        .to_options()
+        .command("help")
+        .help("Show help information")
+        .hide();
+
+    construct!([run, compile, eval, test, help])
+        .to_options()
+        .version(env!("CARGO_PKG_VERSION"))
+        .descr("A minimal JavaScript runtime for CLI tools")
+        .usage("mdeno [OPTIONS] [COMMAND]")
 }
