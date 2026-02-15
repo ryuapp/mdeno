@@ -54,6 +54,7 @@ fn cli_parser() -> OptionParser<CliArgs> {
     let run_file = positional::<String>("FILE").help("File to run");
     let run_args = positional::<String>("ARGS")
         .help("Arguments to pass to the script (use -- to separate)")
+        .strict()
         .many();
     let run = construct!(unstable_flag(), run_file, run_args)
         .map(|(unstable, file_path, script_args)| CliArgs {
