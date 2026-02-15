@@ -32,21 +32,16 @@ pub fn parse_args() -> CliArgs {
 /// Print help message for a specific command
 pub fn print_help(command: Option<&str>) {
     let parser = cli_parser();
+    let args = match command {
+        Some(c) => &[c, "--help"][..],
+        None => &["--help"][..],
+    };
 
-    if let Some(cmd) = command {
-        // Print help for specific command by simulating args
-        let help_args = vec![cmd.to_string(), "--help".to_string()];
-        let args = Args::from(help_args.as_slice()).set_name("mdeno");
-        if let Err(err) = parser.run_inner(args) {
-            err.print_message(80);
-        }
-    } else {
-        // Print main help by simulating --help arg
-        let help_args = vec!["--help".to_string()];
-        let args = Args::from(help_args.as_slice()).set_name("mdeno");
-        if let Err(err) = parser.run_inner(args) {
-            err.print_message(80);
-        }
+    // Print help for specific command by simulating args
+
+    let args = Args::from(args).set_name("mdeno");
+    if let Err(err) = parser.run_inner(args) {
+        err.print_message(80);
     }
 }
 
