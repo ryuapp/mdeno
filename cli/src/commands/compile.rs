@@ -106,7 +106,7 @@ fn compile_modules_to_binary(
         use libsui::Macho;
         Macho::from(exe_bytes)?
             .write_section(SECTION_NAME, bytecode.clone())?
-            .build(&mut output_file)?;
+            .build_and_sign(&mut output_file)?;
     }
 
     #[cfg(target_os = "linux")]
@@ -114,13 +114,6 @@ fn compile_modules_to_binary(
         use libsui::Elf;
         let elf = Elf::new(&exe_bytes);
         elf.append(SECTION_NAME, &bytecode, &mut output_file)?;
-    }
-
-    // Append magic string
-    {
-        use std::io::Write;
-        let mut output_file = fs::OpenOptions::new().append(true).open(&output_exe)?;
-        output_file.write_all(SECTION_NAME.as_bytes())?;
     }
 
     let file_size = fs::metadata(&output_exe)?.len();
