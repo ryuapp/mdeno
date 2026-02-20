@@ -1,0 +1,15 @@
+[package]
+name = "sui_kai"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+libsui = "=0.13.0"
+utils = { path = "../../modules/utils" }
+
+[lints]
+workspace = true

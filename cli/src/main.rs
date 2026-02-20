@@ -1,6 +1,5 @@
 use deno_terminal::colors;
 use std::error::Error;
-use utils::SECTION_NAME;
 
 pub mod bundler;
 mod commands;
@@ -53,8 +52,5 @@ fn run() -> Result<(), Box<dyn Error>> {
 }
 
 fn extract_embedded_bytecode() -> Option<Vec<u8>> {
-    match libsui::find_section(SECTION_NAME) {
-        Ok(Some(data)) => Some(data.to_vec()),
-        Ok(None) | Err(_) => None,
-    }
+    sui_kai::extract()
 }

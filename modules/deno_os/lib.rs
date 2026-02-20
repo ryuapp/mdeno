@@ -3,14 +3,14 @@ use rquickjs::{Ctx, Module};
 use std::collections::HashMap;
 use std::env;
 use std::sync::OnceLock;
-use utils::{SECTION_NAME, add_internal_function};
+use utils::add_internal_function;
 use utils_macros::include_ts;
 
 static SCRIPT_ARGS: OnceLock<Vec<String>> = OnceLock::new();
 
 /// Check if this executable is a standalone binary
 fn is_standalone() -> bool {
-    libsui::find_section(SECTION_NAME).ok().flatten().is_some()
+    sui_kai::extract().is_some()
 }
 
 /// Get script arguments

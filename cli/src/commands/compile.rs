@@ -3,7 +3,7 @@ use crate::error_fmt::format_error_chain;
 use mdeno_path_util::to_file_url;
 use std::error::Error;
 use std::fs;
-use utils::SECTION_NAME;
+use std::path::Path;
 
 pub fn execute(file_path: &str, unstable: bool) -> Result<(), Box<dyn Error>> {
     // Convert file path to absolute canonical path
@@ -81,6 +81,14 @@ fn compile_modules_to_binary(
         .into());
     }
 
+    if !sui_kai::is_native_binary(&mdenort_path) {
+        return Err(format!(
+            "Runtime binary at {} is not a valid executable",
+            mdenort_path.display()
+        )
+        .into());
+    }
+
     let exe_bytes = fs::read(&mdenort_path)?;
 
     // Output executable name
@@ -90,30 +98,23 @@ fn compile_modules_to_binary(
         output_name.to_string()
     };
 
-    // Use libsui to embed bytecode
-    let mut output_file = fs::File::create(&output_exe)?;
-
-    #[cfg(target_os = "windows")]
-    {
-        use libsui::PortableExecutable;
-        PortableExecutable::from(&exe_bytes)?
-            .write_resource(SECTION_NAME, bytecode.clone())?
-            .build(&mut output_file)?;
+    // Prevent overwriting a non-standalone file
+    let output_path = Path::new(&output_exe);
+    if output_path.exists() && !sui_kai::is_native_binary(output_path) {
+        return Err(format!("Can not overwrite \"{output_exe}\": not a standalone binary").into());
     }
 
-    #[cfg(target_os = "macos")]
     {
-        use libsui::Macho;
-        Macho::from(exe_bytes)?
-            .write_section(SECTION_NAME, bytecode.clone())?
-            .build_and_sign(&mut output_file)?;
+        use std::io::Write;
+        let output_bytes = sui_kai::embed(exe_bytes, &bytecode)?;
+        fs::File::create(&output_exe)?.write_all(&output_bytes)?;
     }
 
-    #[cfg(target_os = "linux")]
+    // Set executable permissions
+    #[cfg(unix)]
     {
-        use libsui::Elf;
-        let elf = Elf::new(&exe_bytes);
-        elf.append(SECTION_NAME, &bytecode, &mut output_file)?;
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&output_exe, fs::Permissions::from_mode(0o755))?;
     }
 
     let file_size = fs::metadata(&output_exe)?.len();

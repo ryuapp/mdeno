@@ -1,4 +1,7 @@
 use oxc_allocator::Allocator;
+
+/// Section / resource name used when embedding bytecode in standalone binaries.
+pub const SECTION_NAME: &str = "md3n04cl1";
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
@@ -6,8 +9,6 @@ use oxc_span::SourceType;
 use oxc_transformer::{TransformOptions, Transformer};
 use rquickjs::{Ctx, Result};
 
-/// Magic section name for embedded bytecode in standalone binaries
-pub const SECTION_NAME: &str = "md3n04cl1";
 
 /// Transpile TypeScript to JavaScript using oxc
 ///

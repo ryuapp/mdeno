@@ -16,8 +16,8 @@ path = "src/main.rs"
 anyhow = "=1.0.100"
 bpaf = { version = "=0.9.23", features = ["autocomplete"] }
 deno_terminal = "=0.2.3"
-libsui = "=0.13.0"
 mdeno_path_util = { path = "../modules/mdeno_path_util" }
+sui_kai = { path = "../crates/sui_kai" }
 mdeno_runtime = { path = "runtime" }
 utils = { path = "../modules/utils" }
 oxc_allocator = "=0.111.0"

@@ -21,8 +21,8 @@ rustls = ["web_fetch/rustls"]
 rquickjs = { version = "=0.11.0", features = ["classes", "properties", "loader", "futures"] }
 compio = { version = "0.17.0" }
 compio-runtime = { version = "0.10.0" }
+sui_kai = { path = "../../crates/sui_kai" }
 utils = { path = "../../modules/utils" }
-libsui = { version = "0.13.0" }
 serde = { version = "1.0", features = ["derive"] }
 rkyv = "0.8.12"
 

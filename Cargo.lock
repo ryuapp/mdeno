@@ -630,9 +630,9 @@ dependencies = [
 name = "deno_os"
 version = "0.1.0"
 dependencies = [
- "libsui",
  "rquickjs",
  "serde_json",
+ "sui_kai",
  "utils",
  "utils_macros",
 ]
@@ -1321,7 +1321,6 @@ dependencies = [
  "compio",
  "cyper",
  "deno_terminal",
- "libsui",
  "mdeno_path_util",
  "mdeno_runtime",
  "oxc_allocator",
@@ -1333,6 +1332,7 @@ dependencies = [
  "oxc_transformer",
  "serde",
  "serde_json",
+ "sui_kai",
  "tempfile",
  "utils",
 ]
@@ -1352,10 +1352,10 @@ dependencies = [
  "deno_ns",
  "deno_os",
  "deno_test",
- "libsui",
  "rkyv",
  "rquickjs",
  "serde",
+ "sui_kai",
  "utils",
  "web_console",
  "web_crypto",
@@ -2660,6 +2660,14 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "sui_kai"
+version = "0.1.0"
+dependencies = [
+ "libsui",
+ "utils",
+]
 
 [[package]]
 name = "syn"
