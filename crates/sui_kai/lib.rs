@@ -3,17 +3,13 @@
 //! Platform strategies:
 //!
 //! - **Windows**: PE resource embedding via `libsui::PortableExecutable`.
-//! - **non-Windows**: sentinel record appended to the binary.
-//!   macOS binaries signed at build time remain valid because `CodeLimit`
-//!   covers only the original content, leaving appended data unverified.
+//! - **macOS**: Mach-O section via `libsui::Macho` with ad-hoc code signing.
+//! - **Linux**: ELF note section via `libsui::Elf`.
+//! - **other**: sentinel record appended to the binary.
 
 use utils::SECTION_NAME;
 
 /// Embed `data` into `exe_bytes` and return the resulting binary.
-///
-/// - **Windows**: stores `data` as a named PE resource.
-/// - **non-Windows**: appends `data` as a sentinel record
-///   (`[exe][data][len_u64_le]["<~sui-data~>"]`).
 ///
 /// # Errors
 ///
@@ -28,7 +24,21 @@ pub fn embed(exe_bytes: Vec<u8>, data: &[u8]) -> Result<Vec<u8>, Box<dyn std::er
             .build(&mut out)?;
         Ok(out)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        let mut out = Vec::new();
+        libsui::Macho::from(exe_bytes)?
+            .write_section(SECTION_NAME, data.to_vec())?
+            .build_and_sign(&mut out)?;
+        Ok(out)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let mut out = Vec::new();
+        libsui::Elf::new(&exe_bytes).append(SECTION_NAME, data, &mut out)?;
+        Ok(out)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
         let mut out = exe_bytes;
         out.extend_from_slice(data);
@@ -42,14 +52,14 @@ pub fn embed(exe_bytes: Vec<u8>, data: &[u8]) -> Result<Vec<u8>, Box<dyn std::er
 ///
 /// Returns `None` if no embedded data is found.
 pub fn extract() -> Option<Vec<u8>> {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     {
         libsui::find_section(SECTION_NAME)
             .ok()
             .flatten()
             .map(<[u8]>::to_vec)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
         let data = std::fs::read(std::env::current_exe().ok()?).ok()?;
         let pos = data
