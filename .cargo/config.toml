@@ -1,0 +1,7 @@
+[target.'cfg(target_os = "linux")']
+# Ensure binaries have a PT_NOTE segment (via GNU build-id).
+# Without this, musl/ARM binaries have no PT_NOTE and libsui's Elf::append
+# would add a new PT_NOTE segment, increasing the program header count and
+# pushing section offsets below the reserved space threshold in the object
+# crate, causing an "Unsupported sh_offset" error.
+rustflags = ["-C", "link-arg=-Wl,--build-id=sha1"]
