@@ -19,10 +19,7 @@ use utils::SECTION_NAME;
 ///
 /// Returns an error if `exe_bytes` cannot be parsed or `data` cannot be
 /// embedded.
-pub fn embed(
-    exe_bytes: Vec<u8>,
-    data: &[u8],
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub fn embed(exe_bytes: Vec<u8>, data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     #[cfg(target_os = "windows")]
     {
         let mut out = Vec::new();

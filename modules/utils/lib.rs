@@ -9,7 +9,6 @@ use oxc_span::SourceType;
 use oxc_transformer::{TransformOptions, Transformer};
 use rquickjs::{Ctx, Result};
 
-
 /// Transpile TypeScript to JavaScript using oxc
 ///
 /// # Errors
