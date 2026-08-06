@@ -1,6 +1,6 @@
 >[!NOTE]
 > This repository has been archived.  
-> Essentially, Deno has supported QuickJS since v2.9.5.
+> Essentially, Deno has supported QuickJS since [v2.9.5](https://github.com/denoland/deno/releases/tag/v2.9.5).
 > The binary size is still a bit large, but believing that this can be reduced in the future, I have decided to end this project.
 
 
