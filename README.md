@@ -1,3 +1,9 @@
+>[!NOTE]
+> This repository has been archived.  
+> Essentially, Deno has supported QuickJS since v2.9.5.
+> The binary size is still a bit large, but believing that this can be reduced in the future, I have decided to end this project.
+
+
 # mDeno
 
 A minimal JavaScript runtime for CLI tools. It's built on QuickJS and Rust.
